@@ -94,7 +94,7 @@ Future<String> _fetchBookHtml(String bookUrl) async {
     // wenku8 全站 GBK。
     final bytes = await consolidateHttpClientResponseBytes(res);
     client.close();
-    return gbk.decode(bytes, allowMalformed: true);
+    return gbk.decode(bytes);
   } catch (e) {
     debugPrint('wenku8 _fetchBookHtml failed: $e');
     return '';
@@ -139,12 +139,14 @@ Future<Map<String, dynamic>> fetchDetail(String bookUrl, {String tab = '小说'}
     }
     // 详情页补全：分类、Tags、作者、状态、字数、简介、动画化。
     var category = '', tags = <String>[], author = '', status = '';
-    var wordText = '', abstract = '', animated = false;
+    var wordText = '', abstract = '', animated = false, lastChapter = '';
+    // 详情页纯文本：字段解析与「最近章节」共用，必须活在 if 之外。
+    var plain = '';
     final html = await _fetchBookHtml(bookUrl);
     if (html.isNotEmpty) {
       final doc = html_parser.parse(html);
       // 表格里的「字段：值」都在纯文本里，先抽一段可读文本。
-      final plain = doc.body?.text.replaceAll(RegExp(r'\s+'), ' ') ?? '';
+      plain = doc.body?.text.replaceAll(RegExp(r'\s+'), ' ') ?? '';
       category = _field(plain, '文库分类');
       author = _field(plain, '小说作者');
       status = _field(plain, '文章状态');
@@ -158,6 +160,7 @@ Future<Map<String, dynamic>> fetchDetail(String bookUrl, {String tab = '小说'}
             .toList();
       }
       animated = plain.contains('本作已动画化');
+      lastChapter = _field(plain, '最近章节');
       // 简介：从「内容简介：」到下一个字段标签之间。
       final absMatch = RegExp(
         r'内容简介[：:]\s*(.+?)(?=' + _kFieldBoundary + r'[：:]|$)',
@@ -179,7 +182,7 @@ Future<Map<String, dynamic>> fetchDetail(String bookUrl, {String tab = '小说'}
           ? -1
           : (status.contains('完结') ? 0 : 1),
       'word_number': _parseWordCount(wordText),
-      'last_chapter_title': _field(plain, '最近章节'),
+      'last_chapter_title': lastChapter,
       'source': kWenku8Source,
       if (animated) 'sub_info': '本作已动画化',
     };
