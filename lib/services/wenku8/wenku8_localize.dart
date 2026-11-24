@@ -10,6 +10,9 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
@@ -134,7 +137,11 @@ String? _imageUrl(dom.Element img, String baseUrl) {
   return null;
 }
 
-/// 一次抓取 → 结构化 → 落盘一章，带重试。返回结构化缓存文本（失败为空串）。
+
+/// 一次抓取 → 结构化 → 落盘一章，串行、带重试。返回结构化缓存文本（失败为空串）。
+///
+/// 注意：wenku8 站点对并发抓取很敏感（并发 3 时曾出现请求长期挂起），
+/// 所以全书缓存严格串行，一章一章来。
 Future<String> _fetchOneChapter(Chapter chapter) async {
   var html = '';
   for (var attempt = 0; attempt <= _kChapterRetries; attempt++) {
@@ -146,19 +153,78 @@ Future<String> _fetchOneChapter(Chapter chapter) async {
   return buildStructuredChapter(html, baseUrl: chapter.itemId);
 }
 
-/// 正在后台补全的书：bookId → 每章 itemId → 该章的 in-flight future。
+/// 全本书的「现场抓章」索引：本地书 id → 原始待抓章节（按目录顺序）。
 ///
-/// 阅读器翻到还没落盘的章节时，chapter loader 会复用这里的 future，保证
-/// 「后台正在抓」与「前台要读」不会重复请求同一章。
-final Map<String, Map<String, Future<String>>> _backgroundFills =
-    <String, Map<String, Future<String>>>{};
+/// importParsedChapters 会把章节 id 重写成 local_xxx:chapter:i，丢掉 wenku8 的
+/// 原始 URL，所以必须单独保留这份映射，翻章与此后缓存全书都靠它。
+class _BookState {
+  _BookState({required this.sourceUrl, required this.chapters})
+    : done = List<bool>.filled(chapters.length, false);
 
-/// 第一章就绪后立刻返回，其余章节在后台并发补全。
-///
-/// 返回 [ImportedBook] 时：目录里所有章节都已登记（章节标题齐全），但只有
-/// 前若干章的正文文件已落盘；剩下的由后台任务逐章写入，manifest 不再改动。
-/// 这样阅读器拿到的 chapters 列表是完整的，翻到任何章都能靠 chapter loader
-/// 现场抓取 / 命中后台已写好的文件，用户不再为整本书的抓取等待。
+  final String sourceUrl;
+  final List<Chapter> chapters;
+  final List<bool> done;
+
+  Map<String, dynamic> toJson() => {
+    'sourceUrl': sourceUrl,
+    'chapters': chapters.map((c) => c.itemId).toList(),
+    'done': done,
+  };
+
+  static _BookState? fromJson(Map<String, dynamic> raw) {
+    final chapters = (raw['chapters'] as List?)?.cast<String>() ?? const [];
+    if (chapters.isEmpty) return null;
+    final doneRaw = (raw['done'] as List?) ?? const [];
+    final state = _BookState(
+      sourceUrl: raw['sourceUrl']?.toString() ?? '',
+      chapters: [
+        for (var i = 0; i < chapters.length; i++)
+          Chapter(itemId: chapters[i], title: '第' + (i + 1).toString() + '章', volumeName: '', hasKnownIndex: true),
+      ],
+    );
+    for (var i = 0; i < chapters.length && i < doneRaw.length; i++) {
+      state.done[i] = doneRaw[i] == true;
+    }
+    return state;
+  }
+}
+
+/// 书 id → 状态。首章抓取时登记，缓存任务与现场抓章共享。
+final Map<String, _BookState> _states = <String, _BookState>{};
+
+/// 持久化索引键前缀（SharedPreferences）。
+const String _kIndexPrefix = 'wenku8_local_index:';
+
+Future<void> _saveIndex(String bookId) async {
+  final state = _states[bookId];
+  if (state == null) return;
+  final sp = await SharedPreferences.getInstance();
+  await sp.setString(_kIndexPrefix + bookId, jsonEncode(state.toJson()));
+}
+
+/// app 启动后回填所有已存的状态（顺序无所谓，按 key 前缀扫描）。
+Future<void> restoreStates() async {
+  final sp = await SharedPreferences.getInstance();
+  for (final key in sp.getKeys().where((k) => k.startsWith(_kIndexPrefix))) {
+    final raw = sp.getString(key);
+    if (raw == null) continue;
+    try {
+      final state = _BookState.fromJson(
+        jsonDecode(raw) as Map<String, dynamic>,
+      );
+      if (state != null) _states[key.substring(_kIndexPrefix.length)] = state;
+    } catch (_) {}
+  }
+}
+
+/// 该书是否还有未缓存章节。
+bool hasPendingChapters(String bookId) {
+  final state = _states[bookId];
+  if (state == null) return false;
+  return state.done.any((d) => !d);
+}
+
+/// 首章就绪即返回，其余章节交给「加入书架」触发的全书缓存任务。
 Future<ImportedBook> localizeToShelf(
   MediaItem item, {
   void Function(int done, int total)? onProgress,
@@ -169,7 +235,6 @@ Future<ImportedBook> localizeToShelf(
   if (chapters.isEmpty) throw StateError('目录为空，无法转存');
 
   final take = initialChapters.clamp(1, chapters.length);
-  // 先抓前 N 章，保证立刻有可读正文（结构化，含插图）。
   final parsed = <ParsedBookChapter>[];
   for (var i = 0; i < take; i++) {
     final chapter = chapters[i];
@@ -177,17 +242,14 @@ Future<ImportedBook> localizeToShelf(
     final name = chapter.title.trim().isEmpty
         ? '第' + (i + 1).toString() + '章'
         : chapter.title.trim();
-    parsed.add(
-      ParsedBookChapter(title: name, text: structured.isEmpty ? ' ' : structured),
-    );
+    parsed.add(ParsedBookChapter(title: name, text: structured.isEmpty ? ' ' : structured));
     onProgress?.call(i + 1, chapters.length);
   }
-  // 其余章节先登记空正文（' '），目录完整但文件极小；后台会覆写它们。
+  // 其余章节只登记标题，正文留空占位，现场抓章 / 全书缓存任务会覆写。
   for (var i = take; i < chapters.length; i++) {
-    final chapter = chapters[i];
     parsed.add(
       ParsedBookChapter(
-        title: chapter.title.trim().isEmpty ? '第' + (i + 1).toString() + '章' : chapter.title.trim(),
+        title: chapters[i].title.trim().isEmpty ? '第' + (i + 1).toString() + '章' : chapters[i].title.trim(),
         text: ' ',
       ),
     );
@@ -199,69 +261,73 @@ Future<ImportedBook> localizeToShelf(
     chapters: parsed,
   );
 
-  // 后台并发补全：小并发（3）避免把站点打爆，也减少总耗时。
-  // 关键：整段用 unawaited 脱离调用方 —— localizeToShelf 一返回骨架书就进
-  // 阅读器，剩下的章节在后台慢慢填，绝不让用户干等。
-  unawaited(_fillRest(book, chapters, take));
+  // 记录原始章节 URL 与已抓状态（首章已完成），持久化以便重启后继续。
+  final state = _BookState(sourceUrl: item.id, chapters: chapters);
+  for (var i = 0; i < take && i < state.done.length; i++) state.done[i] = true;
+  _states[book.id] = state;
+  await _saveIndex(book.id);
+
+  // 这里不启动任何后台任务：打开书只读首章，翻到哪章抓哪章；
+  // 全书缓存由「加入书架」显式触发（cacheWholeBook）。
   return book;
 }
 
-Future<void> _fillRest(
-  ImportedBook book,
-  List<Chapter> chapters,
-  int take,
-) async {
-  final inFlight = <String, Future<String>>{};
-  _backgroundFills[book.id] = inFlight;
-  var done = take;
-  final total = chapters.length;
-  for (var i = take; i < total; i += 3) {
-    final batch = <Future<void>>[];
-    for (var j = i; j < total && j < i + 3; j++) {
-      final chapter = chapters[j];
-      final fut = _fetchOneChapter(chapter);
-      inFlight[chapter.itemId] = fut;
-      batch.add(
-        fut.then((text) async {
-          if (text.isEmpty) return;
-          await ImportedBookStore.instance.writeChapterText(
-            book.id,
-            chapter.itemId,
-            text,
-            overwrite: true,
-          );
-          inFlight.remove(chapter.itemId);
-          done++;
-        }),
-      );
-    }
-    await Future.wait(batch, eagerError: false);
-  }
-  _backgroundFills.remove(book.id);
-}
-
-/// 阅读器取章：命中后台 in-flight 就复用，否则读本地文件；本地没有就现场抓并落盘。
-///
-/// 这样即使后台任务还没跑到这一章，用户翻到时也只是等一章的网络时间，
-/// 而不是等整本书。
-Future<String> localChapterText(
-  String bookId,
-  Chapter chapter, {
-  String baseUrl = '',
-}) async {
+/// 现场抓一章（翻章时用）：本地已有正文就读，否则抓并落盘。
+Future<String> localChapterText(String bookId, Chapter chapter) async {
   final store = ImportedBookStore.instance;
   if (await store.hasChapterText(bookId, chapter.itemId)) {
     return store.chapterText(bookId, chapter.itemId);
   }
-  final fills = _backgroundFills[bookId];
-  final inflight = fills?[chapter.itemId];
-  if (inflight != null) return inflight;
-  // 后台没覆盖到（已停止 / 失败），现场抓一章并落盘。
-  final text = await _fetchOneChapter(chapter);
-  if (text.isNotEmpty) {
-    await store.writeChapterText(bookId, chapter.itemId, text, overwrite: true);
-    return text;
+  final state = _states[bookId];
+  final index = state?.chapters.indexWhere((c) => c.itemId == chapter.itemId) ?? -1;
+  final target = index >= 0 ? state!.chapters[index] : chapter;
+  final text = await _fetchOneChapter(target);
+  if (text.isEmpty) {
+    return store.hasChapterText(bookId, chapter.itemId)
+        ? store.chapterText(bookId, chapter.itemId)
+        : ' ';
   }
-  // 实在抓不到，退回可能存在的占位文件，至少不让阅读器崩。
-  return store.chapterText(bookId, chapter.itemId);
+  await store.writeChapterText(bookId, chapter.itemId, text, overwrite: true);
+  if (index >= 0) {
+    state!.done[index] = true;
+    await _saveIndex(bookId);
+  }
+  return text;
+}
+
+/// 从 ImportedBook 的 manifest 取第 i 章的本地 id（local_xxx:chapter:i）。
+Future<String?> _localIdFor(String bookId, int index) async {
+  final book = await ImportedBookStore.instance.book(bookId);
+  if (book == null || index < 0 || index >= book.chapters.length) return null;
+  return book.chapters[index].itemId;
+}
+
+/// 全书缓存任务：串行抓完所有未缓存章节，逐章写入 manifest 对应的本地 id。
+///
+/// [onProgress] 报告 (已完成章数, 总章数)；[shouldStop] 用于取消。
+Future<void> cacheWholeBook(
+  String bookId, {
+  void Function(int done, int total)? onProgress,
+  bool Function()? shouldStop,
+}) async {
+  final state = _states[bookId];
+  if (state == null) return;
+  final total = state.chapters.length;
+  var done = state.done.where((d) => d).length;
+  final store = ImportedBookStore.instance;
+  for (var i = 0; i < total; i++) {
+    if (shouldStop?.call() ?? false) return;
+    final localId = await _localIdFor(bookId, i);
+    if (localId == null) continue;
+    if (state.done[i] && await store.hasChapterText(bookId, localId)) continue;
+    final text = await _fetchOneChapter(state.chapters[i]);
+    if (shouldStop?.call() ?? false) return;
+    if (text.isNotEmpty) {
+      await store.writeChapterText(bookId, localId, text, overwrite: true);
+      state.done[i] = true;
+      done++;
+      await _saveIndex(bookId);
+    }
+    onProgress?.call(done, total);
+  }
 }
