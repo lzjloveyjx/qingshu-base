@@ -293,18 +293,22 @@ Future<String> localChapterText(String bookId, Chapter chapter) async {
   // 非 wenku8 本地书（用户自己导入的 TXT/EPUB）没有抓取索引，
   // 直接读本地文件；缺章就是缺章，不做任何网络抓取。
   if (state == null) return store.chapterText(bookId, chapter.itemId);
-  final index = state.chapters.indexWhere((c) => c.itemId == chapter.itemId);
-  final target = index >= 0 ? state!.chapters[index] : chapter;
-  final text = await _fetchOneChapter(target);
+  // 阅读器传进来的是 manifest 里的本地 id（local_xxx:chapter:N），
+  // 而 _states 里存的是 wenku8 原始 URL。必须按序号还原对应关系，
+  // 否则会拿本地 id 当 URL 去抓，必定失败（翻到第二章报空正文）。
+  final match = RegExp(r':chapter:(\d+)$').firstMatch(chapter.itemId);
+  final index = match == null ? -1 : int.tryParse(match.group(1) ?? '') ?? -1;
+  if (index < 0 || index >= state.chapters.length) {
+    return store.chapterText(bookId, chapter.itemId);
+  }
+  final text = await _fetchOneChapter(state.chapters[index]);
   if (text.isEmpty) {
     final hasLocal = await store.hasChapterText(bookId, chapter.itemId);
     return hasLocal ? store.chapterText(bookId, chapter.itemId) : ' ';
   }
   await store.writeChapterText(bookId, chapter.itemId, text, overwrite: true);
-  if (index >= 0) {
-    state!.done[index] = true;
-    await _saveIndex(bookId);
-  }
+  state.done[index] = true;
+  await _saveIndex(bookId);
   return text;
 }
 
