@@ -297,9 +297,8 @@ Future<String> localChapterText(String bookId, Chapter chapter) async {
   final target = index >= 0 ? state!.chapters[index] : chapter;
   final text = await _fetchOneChapter(target);
   if (text.isEmpty) {
-    return store.hasChapterText(bookId, chapter.itemId)
-        ? store.chapterText(bookId, chapter.itemId)
-        : ' ';
+    final hasLocal = await store.hasChapterText(bookId, chapter.itemId);
+    return hasLocal ? store.chapterText(bookId, chapter.itemId) : ' ';
   }
   await store.writeChapterText(bookId, chapter.itemId, text, overwrite: true);
   if (index >= 0) {
