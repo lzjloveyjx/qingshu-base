@@ -36,6 +36,21 @@ jobs:
           channel: stable
           cache: true
 
+      # runner 只有约 14GB 可用空间，NDK + CMake + 全套 native 编译会把它吃光
+      # （上一轮在 mergeReleaseNativeLibs 报 "No space left on device"，只剩 81MB）。
+      # 先删掉预装的无用 SDK 腾空间。
+      - name: Free disk space
+        run: |
+          echo "=== before ==="
+          df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo rm -rf /usr/local/lib/android/sdk/system-images || true
+          sudo rm -rf /usr/local/lib/android/sdk/emulator || true
+          sudo apt-get clean
+          echo "=== after ==="
+          df -h / | tail -1
+
       - name: Install native build tools
         run: |
           sudo apt-get update
@@ -96,10 +111,14 @@ jobs:
 
       - name: Build APK
         run: |
-          flutter build apk --release \
+          # 只出 arm64：现代手机基本都支持，且能把 native 编译产物砍掉一半
+          # （上一轮磁盘满就发生在 x86_64 那套 native 库上）。
+          flutter build apk --release --target-platform android-arm64 \
             --build-name="${{ steps.ver.outputs.name }}" \
             --build-number="${{ steps.ver.outputs.build }}"
           ls -lh build/app/outputs/flutter-apk/ || true
+          echo "=== 剩余空间 ==="
+          df -h / | tail -1
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
