@@ -134,37 +134,134 @@ String? _imageUrl(dom.Element img, String baseUrl) {
   return null;
 }
 
-/// 转存整本书到本地书架。
+/// 一次抓取 → 结构化 → 落盘一章，带重试。返回结构化缓存文本（失败为空串）。
+Future<String> _fetchOneChapter(Chapter chapter) async {
+  var html = '';
+  for (var attempt = 0; attempt <= _kChapterRetries; attempt++) {
+    html = await fetchChapterHtml(chapter);
+    if (html.trim().isNotEmpty) break;
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+  }
+  if (html.trim().isEmpty) return '';
+  return buildStructuredChapter(html, baseUrl: chapter.itemId);
+}
+
+/// 正在后台补全的书：bookId → 每章 itemId → 该章的 in-flight future。
+///
+/// 阅读器翻到还没落盘的章节时，chapter loader 会复用这里的 future，保证
+/// 「后台正在抓」与「前台要读」不会重复请求同一章。
+final Map<String, Map<String, Future<String>>> _backgroundFills =
+    <String, Map<String, Future<String>>>{};
+
+/// 第一章就绪后立刻返回，其余章节在后台并发补全。
+///
+/// 返回 [ImportedBook] 时：目录里所有章节都已登记（章节标题齐全），但只有
+/// 前若干章的正文文件已落盘；剩下的由后台任务逐章写入，manifest 不再改动。
+/// 这样阅读器拿到的 chapters 列表是完整的，翻到任何章都能靠 chapter loader
+/// 现场抓取 / 命中后台已写好的文件，用户不再为整本书的抓取等待。
 Future<ImportedBook> localizeToShelf(
   MediaItem item, {
   void Function(int done, int total)? onProgress,
+  int initialChapters = 1,
 }) async {
   final volumes = await fetchDirectory(item.id);
   final chapters = <Chapter>[for (final volume in volumes) ...volume];
   if (chapters.isEmpty) throw StateError('目录为空，无法转存');
 
-  // 每章单独落盘：章节正文是结构化缓存格式，不能走 TXT 再解析那条路
-  // （那样会把插图块和分块结构打散）。
+  final take = initialChapters.clamp(1, chapters.length);
+  // 先抓前 N 章，保证立刻有可读正文（结构化，含插图）。
   final parsed = <ParsedBookChapter>[];
-  var done = 0;
-  for (final chapter in chapters) {
-    var html = '';
-    for (var attempt = 0; attempt <= _kChapterRetries; attempt++) {
-      html = await fetchChapterHtml(chapter);
-      if (html.trim().isNotEmpty) break;
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-    }
-    done++;
-    onProgress?.call(done, chapters.length);
+  for (var i = 0; i < take; i++) {
+    final chapter = chapters[i];
+    final structured = await _fetchOneChapter(chapter);
     final name = chapter.title.trim().isEmpty
-        ? '第' + done.toString() + '章'
+        ? '第' + (i + 1).toString() + '章'
         : chapter.title.trim();
-    final structured = buildStructuredChapter(html, baseUrl: chapter.itemId);
-    parsed.add(ParsedBookChapter(title: name, text: structured));
+    parsed.add(
+      ParsedBookChapter(title: name, text: structured.isEmpty ? ' ' : structured),
+    );
+    onProgress?.call(i + 1, chapters.length);
   }
-  return ImportedBookStore.instance.importParsedChapters(
+  // 其余章节先登记空正文（' '），目录完整但文件极小；后台会覆写它们。
+  for (var i = take; i < chapters.length; i++) {
+    final chapter = chapters[i];
+    parsed.add(
+      ParsedBookChapter(
+        title: chapter.title.trim().isEmpty ? '第' + (i + 1).toString() + '章' : chapter.title.trim(),
+        text: ' ',
+      ),
+    );
+  }
+
+  final book = await ImportedBookStore.instance.importParsedChapters(
     title: item.title,
     author: item.author,
     chapters: parsed,
   );
+
+  // 后台并发补全：小并发（3）避免把站点打爆，也减少总耗时。
+  // 关键：整段用 unawaited 脱离调用方 —— localizeToShelf 一返回骨架书就进
+  // 阅读器，剩下的章节在后台慢慢填，绝不让用户干等。
+  unawaited(_fillRest(book, chapters, take));
+  return book;
+}
+
+Future<void> _fillRest(
+  ImportedBook book,
+  List<Chapter> chapters,
+  int take,
+) async {
+  final inFlight = <String, Future<String>>{};
+  _backgroundFills[book.id] = inFlight;
+  var done = take;
+  final total = chapters.length;
+  for (var i = take; i < total; i += 3) {
+    final batch = <Future<void>>[];
+    for (var j = i; j < total && j < i + 3; j++) {
+      final chapter = chapters[j];
+      final fut = _fetchOneChapter(chapter);
+      inFlight[chapter.itemId] = fut;
+      batch.add(
+        fut.then((text) async {
+          if (text.isEmpty) return;
+          await ImportedBookStore.instance.writeChapterText(
+            book.id,
+            chapter.itemId,
+            text,
+            overwrite: true,
+          );
+          inFlight.remove(chapter.itemId);
+          done++;
+        }),
+      );
+    }
+    await Future.wait(batch, eagerError: false);
+  }
+  _backgroundFills.remove(book.id);
+}
+
+/// 阅读器取章：命中后台 in-flight 就复用，否则读本地文件；本地没有就现场抓并落盘。
+///
+/// 这样即使后台任务还没跑到这一章，用户翻到时也只是等一章的网络时间，
+/// 而不是等整本书。
+Future<String> localChapterText(
+  String bookId,
+  Chapter chapter, {
+  String baseUrl = '',
+}) async {
+  final store = ImportedBookStore.instance;
+  if (await store.hasChapterText(bookId, chapter.itemId)) {
+    return store.chapterText(bookId, chapter.itemId);
+  }
+  final fills = _backgroundFills[bookId];
+  final inflight = fills?[chapter.itemId];
+  if (inflight != null) return inflight;
+  // 后台没覆盖到（已停止 / 失败），现场抓一章并落盘。
+  final text = await _fetchOneChapter(chapter);
+  if (text.isNotEmpty) {
+    await store.writeChapterText(bookId, chapter.itemId, text, overwrite: true);
+    return text;
+  }
+  // 实在抓不到，退回可能存在的占位文件，至少不让阅读器崩。
+  return store.chapterText(bookId, chapter.itemId);
 }

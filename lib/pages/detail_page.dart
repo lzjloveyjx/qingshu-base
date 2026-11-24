@@ -2392,7 +2392,7 @@ class _DetailPageState extends State<DetailPage> {
       book ??= await localizeToShelf(
         widget.item,
         onProgress: (done, total) {
-          progress.value = '已抓取 ' + done.toString() + '/' + total.toString() + ' 章';
+          progress.value = '正在准备第 ' + done.toString() + ' 章，其余章节将后台补全…';
         },
       );
       final local = book;
@@ -2422,7 +2422,7 @@ class _DetailPageState extends State<DetailPage> {
               cacheManager: PosterCache.instance,
             ),
             chapterLoader: (chapter) =>
-                ImportedBookStore.instance.chapterText(local.id, chapter.itemId),
+                localChapterText(local.id, chapter),
           ),
         ),
       );
