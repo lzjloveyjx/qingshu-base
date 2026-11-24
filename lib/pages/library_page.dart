@@ -24,6 +24,7 @@ import '../services/classic_shelf_layout.dart';
 import '../services/connectivity_status.dart';
 import '../services/desktop_platform.dart';
 import '../services/imported_book_store.dart';
+import '../services/wenku8/wenku8_localize.dart';
 import '../services/haptic_preferences.dart';
 import '../services/library_store.dart';
 import '../services/media_history_store.dart';

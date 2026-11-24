@@ -16,6 +16,8 @@ import '../models/series_detail.dart';
 import '../models/shuqi_book.dart';
 import '../services/wenku8/wenku8_source.dart' as wenku8;
 import '../services/wenku8/wenku8_localize.dart';
+import '../services/wenku8/wenku8_cache_service.dart';
+import '../services/wenku8/wenku8_book_map.dart';
 import '../services/api_client.dart';
 import '../services/app_theme_style.dart';
 import '../services/audio_history.dart';
@@ -319,6 +321,28 @@ class _DetailPageState extends State<DetailPage> {
         duration: const Duration(seconds: 2),
       ),
     );
+    // 青枢：wenku8 书加入书架后启动全书后台缓存（前台服务保活）。
+    // 移出则停止当前缓存任务。
+    if (wenku8.isWenku8Item(widget.item)) {
+      if (added) {
+        // 若还没建过本地书（详情页直接加书架），先抓首章建骨架书再缓存。
+        var localId = await Wenku8BookMap.instance.get(widget.item.id);
+        if (localId == null) {
+          final book = await localizeToShelf(
+            widget.item,
+            onProgress: (done, total) {},
+          );
+          localId = book.id;
+          await Wenku8BookMap.instance.put(widget.item.id, localId);
+        }
+        unawaited(Wenku8CacheService.instance.start(
+          localId,
+          title: '缓存《' + widget.item.title + '》',
+        ));
+      } else {
+        Wenku8CacheService.instance.stop();
+      }
+    }
   }
 
   @override
@@ -2355,8 +2379,6 @@ class _DetailPageState extends State<DetailPage> {
   /// 青枢：wenku8 的书没有服务端音源，正文也只能靠规则抓。
   /// 统一做法 —— 首次打开时转存成本地书（结构化章节，含插图），之后直接复用。
   /// 本地书走 localOnly：图片按块渲染、听书自动用系统朗读。
-  static final Map<String, String> _wenku8LocalIds = <String, String>{};
-
   Future<void> _openWenku8LocalBook({int startIndex = 0}) async {
     if (_opening) return;
     final wGen = ++_openGeneration;
@@ -2385,7 +2407,7 @@ class _DetailPageState extends State<DetailPage> {
 
     try {
       ImportedBook? book;
-      final cachedId = _wenku8LocalIds[widget.item.id];
+      final cachedId = await Wenku8BookMap.instance.get(widget.item.id);
       if (cachedId != null) {
         book = await ImportedBookStore.instance.book(cachedId);
       }
@@ -2396,8 +2418,9 @@ class _DetailPageState extends State<DetailPage> {
         },
       );
       final local = book;
-      _wenku8LocalIds[widget.item.id] = local.id;
-      await ShelfStore.instance.add(local.toMediaItem());
+      await Wenku8BookMap.instance.put(widget.item.id, local.id);
+      // 打开书只读首章，不再自动塞进书架；是否加入书架由用户显式决定，
+      // 加入后再触发全书缓存。这里仅把映射留给后续的加入书架动作。
       closeDialog();
       if (!mounted || wGen != _openGeneration) return;
       await Navigator.push<void>(
