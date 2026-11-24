@@ -897,16 +897,19 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
     setState(() {
       _backendError = null;
     });
+    // 【青枢】番茄后端（libfqapi_core.so 的 Rust 内容层）已从本项目移除：
+    // 青枢只读本地 TXT/EPUB + 自有规则源，不需要它。但上游的启动流程会把
+    // 它的失败当成致命错误，直接顶一张「启动失败」整屏 —— 于是在没有
+    // Rust 库的构建里，应用一进去就卡死。
+    //
+    // 这里改成「尽力启动，失败只记日志」：后端能起来就用（比如以后接回
+    // 在线书源），起不来也照常进本地阅读。
     try {
       await (widget.backendStarter ?? BackendService.instance.start)();
-      // 成功路径不再有整屏闸门，界面不需要为此重建；只有失败才要换屏。
       if (mounted) _scheduleLegacyUiNotice();
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _backendError = '$e';
-        });
-      }
+      // 不再 setState(_backendError)：那会触发整屏失败页。
+      debugPrint('[QingShu] 后端启动跳过（本项目不依赖番茄内容层）: $e');
     }
   }
 
