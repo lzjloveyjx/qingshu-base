@@ -1546,6 +1546,11 @@ final homeProvider = NotifierProvider<HomeNotifier, HomeState>(
     usesLocalTabs: true,
     indexedHomepageLoader: wenku8HomepageLoader,
     searchLoader: wenku8HomeSearchTabs,
+    // 听书/漫画/漫剧当前没有可用数据源（番茄后端已移除）。
+    // 返回空列表而不是调后端或抛错，让这些分类显示「暂无内容」而不是错误页。
+    audioSearchLoader: ({int offset = 0}) async => const <SearchTab>[],
+    mangaSearchLoader: ({int offset = 0}) async => const <SearchTab>[],
+    manjuSearchLoader: ({int offset = 0}) async => const <SearchTab>[],
   ),
 );
 

@@ -39,8 +39,16 @@ Future<NovelLocalIndex?> _index(Plugin p) async {
   return NovelLocalIndex.load(asset);
 }
 
+/// 索引里的封面是 http://，Android 禁止明文流量且图床只认带 UA 的请求；
+/// https 端点实测可用（curl 200），这里统一升级协议。
+String _coverUrl(String cover) {
+  final c = cover.trim();
+  if (c.startsWith('http://')) return 'https://' + c.substring(7);
+  return c;
+}
+
 MediaItem _item(SearchItem s) => MediaItem(
-      id: s.src, title: s.name, cover: s.cover,
+      id: s.src, title: s.name, cover: _coverUrl(s.cover),
       author: '', badge: '', ep: '', kind: 'book', source: kWenku8Source,
     );
 
@@ -82,7 +90,7 @@ Future<Map<String, dynamic>> fetchDetail(String bookUrl, {String tab = '小说'}
       for (final s in idx.browse(p)) {
         if (s.src.endsWith('/book/' + aid + '.htm')) {
           title = s.name;
-          cover = s.cover;
+          cover = _coverUrl(s.cover);
           break;
         }
       }
