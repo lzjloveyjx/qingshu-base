@@ -1,0 +1,30 @@
+{
+  "api": "9",
+  "type": "novel",
+  "name": "wenku8",
+  "version": "1.2",
+  "muliSources": true,
+  "useWebview": false,
+  "useNativePlayer": false,
+  "usePost": false,
+  "useLegacyParser": false,
+  "adBlocker": false,
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+  "baseURL": "https://www.wenku8.cc",
+  "searchURL": "https://www.wenku8.cc/modules/article/search.php?searchkey=@keyword",
+  "searchList": "//div[contains(@class,'search-result-list')]",
+  "searchName": "//h2[contains(@class,'tit')]//a",
+  "searchResult": "//h2[contains(@class,'tit')]//a",
+  "searchCover": "//div[contains(@class,'imgbox')]//img",
+  "chapterRoads": "//table[contains(@class,'css')]",
+  "chapterResult": "//a[contains(@href,'.htm')]",
+  "chapterContent": "//div[@id='content']",
+  "chapterDrop": "//ul[@id='contentdp']",
+  "chapterCatalog": "/index.htm",
+  "referer": "https://www.wenku8.cc",
+  "antiCrawlerConfig": {
+    "enabled": false
+  },
+  "novelIndexAsset": "assets/rules/novel/wenku8_index.json",
+  "catalogTemplate": "/novel/{cat}/{aid}/index.htm"
+}

@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import 'package:kazumi/kazumi_bootstrap.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
@@ -131,8 +133,8 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
   @override
   void initState() {
     super.initState();
-    _prefs = inject<NovelReaderPrefs>();
-    _shelfRepo = inject<NovelShelfRepository>();
+    _prefs = KazumiBootstrap.readerPrefs;
+    _shelfRepo = KazumiBootstrap.shelfRepo;
     _controller = NovelReaderController(
       plugin: widget.plugin,
       bookTitle: widget.bookTitle,
@@ -145,7 +147,7 @@ class _NovelReaderPageState extends State<NovelReaderPage> {
       ..onSentenceChanged = _onTtsSentenceChanged
       ..onNotice = _onTtsNotice;
     _ttsBridge = TtsAudioBridge(
-      audioController: inject<AudioController>(),
+      audioController: KazumiBootstrap.audioController,
       onPause: () => _tts.pause(),
       onResume: () => _tts.resume(),
       onPrevious: () => _tts.skip(-1),

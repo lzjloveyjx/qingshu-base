@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:kazumi/kazumi_bootstrap.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
@@ -64,7 +66,7 @@ class _NovelSearchPageState extends State<NovelSearchPage> {
   void initState() {
     super.initState();
     _input.text = widget.initialQuery;
-    final controller = inject<PluginsController>();
+    final controller = KazumiBootstrap.plugins;
     _sources
       ..clear()
       ..addAll(controller.pluginList.where((p) => p.supportsNovel));

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/home_cell.dart';
 import '../models/search_discovery.dart';
 import '../models/media_item.dart';
+import 'package:kazumi/pages/novel/novel_search_page.dart';
 import '../services/api_client.dart';
 import '../services/app_log.dart';
 import '../services/app_style_tokens.dart';
@@ -548,7 +549,19 @@ class _HomePageState extends ConsumerState<HomePage> {
 
   Widget _buildTabPage(int target, double gridWidth, double textScale) {
     final palette = HomePalette.of(context);
-    final kind = ref.read(homeProvider.notifier).identityOf(target).kind;
+    final identity = ref.read(homeProvider.notifier).identityOf(target);
+    final kind = identity.kind;
+
+    // 【青枢】「小说」分类直接换成 Kazumi 的轻小说页。
+    //
+    // 为什么不再走番茄内容流：番茄后端（libfqapi_core.so）已从本项目移除，
+    // 上游的首页 feed 全靠它拉数据，没有后端就只能显示「网络连接异常」。
+    // 青枢要读的是 wenku8 规则源，所以这里把「小说」标签整个交给 Kazumi
+    // 的 NovelSearchPage —— 它读随包的 assets/rules/novel/wenku8.json 和
+    // 4326 本书目索引，不依赖任何在线后端。
+    if (identity.name == '小说') {
+      return const NovelSearchPage();
+    }
     if (kind == 'ugc') {
       return ValueListenableBuilder<int?>(
         valueListenable: shellVisibleTab,

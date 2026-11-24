@@ -109,6 +109,11 @@ flutter:
   uses-material-design: true
 
   assets:
+    # 【青枢】wenku8 轻小说规则 + 随包书目索引（4326 本）。
+    # Kazumi 侧由 PluginsController._seedBundledNovelRules() 从
+    # assets/rules/novel/<name>.json 读取并种进插件列表；缺了这两份文件，
+    # 「轻小说」标签永远是空的，搜索也搜不到东西。
+    - assets/rules/novel/
     - assets/licenses/sync_storage.txt
     - assets/config/config.json
     - assets/config/filter.json

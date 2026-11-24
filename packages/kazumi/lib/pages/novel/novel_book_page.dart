@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:kazumi/kazumi_bootstrap.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
@@ -54,7 +56,7 @@ class NovelBookPage extends StatefulWidget {
 }
 
 class _NovelBookPageState extends State<NovelBookPage> {
-  late final NovelShelfRepository _repo = inject<NovelShelfRepository>();
+  late final NovelShelfRepository _repo = KazumiBootstrap.shelfRepo;
   bool _onShelf = false;
 
   Plugin get plugin => widget.plugin;

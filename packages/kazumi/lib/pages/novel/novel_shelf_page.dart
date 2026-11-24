@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import 'package:kazumi/kazumi_bootstrap.dart';
 import 'package:flutter_modular/flutter_modular.dart';
 
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
@@ -39,7 +41,7 @@ class _NovelShelfPageState extends State<NovelShelfPage>
   void initState() {
     super.initState();
     _tabs = TabController(length: 2, vsync: this);
-    _repo = inject<NovelShelfRepository>();
+    _repo = KazumiBootstrap.shelfRepo;
     _reload();
   }
 
@@ -58,7 +60,7 @@ class _NovelShelfPageState extends State<NovelShelfPage>
 
   /// 找到这本书对应的规则。规则被删掉时返回 null，此时提示用户而不是崩。
   Plugin? _pluginFor(String pluginName) {
-    final controller = inject<PluginsController>();
+    final controller = KazumiBootstrap.plugins;
     for (final plugin in controller.pluginList) {
       if (plugin.name.toLowerCase() == pluginName.toLowerCase()) {
         return plugin;
