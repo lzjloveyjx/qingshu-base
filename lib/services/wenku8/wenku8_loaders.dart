@@ -4,10 +4,10 @@
 /// wenku8 只负责提供数据（随包 4326 本索引 + XPath 抓目录正文）。
 library;
 
-import '../models/home_cell.dart';
-import '../models/homepage_page.dart';
-import '../models/media_item.dart';
-import '../models/search_discovery.dart';
+import '../../models/home_cell.dart';
+import '../../models/homepage_page.dart';
+import '../../models/media_item.dart';
+import '../../models/search_discovery.dart';
 import 'wenku8_source.dart';
 
 /// 其它分类返回空页，沿用它们各自的失败兜底（本项目只做轻小说）。
