@@ -310,7 +310,7 @@ mixin _LibraryPageActions on _LibraryPageStateBase {
           localOnly: true,
           readerStore: readerStore,
           chapterLoader: (chapter) =>
-              store.chapterText(book.id, chapter.itemId),
+              localChapterText(book.id, chapter),
         ),
       ),
     );

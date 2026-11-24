@@ -41,6 +41,8 @@ dependencies:
   characters: ^1.4.1
   path_provider: ^2.1.0
   shared_preferences: ^2.3.0
+  # 青枢：wenku8 加入书架后的全书缓存前台服务保活（与 kazumi 同版本）。
+  flutter_foreground_task: ^9.0.0
   url_launcher: ^6.3.0
   # hive_ce is the maintained Hive fork; all boxes open encrypted via
   # EncryptedHive (P1-3). Keys live in flutter_secure_storage (Keystore).

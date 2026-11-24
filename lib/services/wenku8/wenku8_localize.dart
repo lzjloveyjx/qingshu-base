@@ -202,6 +202,17 @@ Future<void> _saveIndex(String bookId) async {
   await sp.setString(_kIndexPrefix + bookId, jsonEncode(state.toJson()));
 }
 
+bool _statesRestored = false;
+Future<void>? _restoring;
+
+/// 懒加载：首次用到状态时从 SharedPreferences 回填，避免改 main 启动路径。
+Future<void> _ensureStates() {
+  if (_statesRestored) return Future<void>.value();
+  return _restoring ??= restoreStates().then((_) {
+    _statesRestored = true;
+  });
+}
+
 /// app 启动后回填所有已存的状态（顺序无所谓，按 key 前缀扫描）。
 Future<void> restoreStates() async {
   final sp = await SharedPreferences.getInstance();
@@ -218,11 +229,10 @@ Future<void> restoreStates() async {
 }
 
 /// 该书是否还有未缓存章节。
-bool hasPendingChapters(String bookId) {
-  final state = _states[bookId];
-  if (state == null) return false;
-  return state.done.any((d) => !d);
-}
+bool hasPendingChapters(String bookId) => _states[bookId]?.done.any((d) => !d) ?? false;
+
+/// 确保状态已回填（由缓存服务在启动任务前调用）。
+Future<void> ensureStates() => _ensureStates();
 
 /// 首章就绪即返回，其余章节交给「加入书架」触发的全书缓存任务。
 Future<ImportedBook> localizeToShelf(
@@ -274,12 +284,16 @@ Future<ImportedBook> localizeToShelf(
 
 /// 现场抓一章（翻章时用）：本地已有正文就读，否则抓并落盘。
 Future<String> localChapterText(String bookId, Chapter chapter) async {
+  await _ensureStates();
   final store = ImportedBookStore.instance;
   if (await store.hasChapterText(bookId, chapter.itemId)) {
     return store.chapterText(bookId, chapter.itemId);
   }
   final state = _states[bookId];
-  final index = state?.chapters.indexWhere((c) => c.itemId == chapter.itemId) ?? -1;
+  // 非 wenku8 本地书（用户自己导入的 TXT/EPUB）没有抓取索引，
+  // 直接读本地文件；缺章就是缺章，不做任何网络抓取。
+  if (state == null) return store.chapterText(bookId, chapter.itemId);
+  final index = state.chapters.indexWhere((c) => c.itemId == chapter.itemId);
   final target = index >= 0 ? state!.chapters[index] : chapter;
   final text = await _fetchOneChapter(target);
   if (text.isEmpty) {
@@ -310,6 +324,7 @@ Future<void> cacheWholeBook(
   void Function(int done, int total)? onProgress,
   bool Function()? shouldStop,
 }) async {
+  await _ensureStates();
   final state = _states[bookId];
   if (state == null) return;
   final total = state.chapters.length;
