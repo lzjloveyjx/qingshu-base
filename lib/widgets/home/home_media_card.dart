@@ -79,6 +79,11 @@ class StoryCover extends StatelessWidget {
         imageUrl: item.cover,
         fit: fit,
         alignment: alignment,
+        // 青枢：wenku8 图床对 dart:io 默认 UA 返回 403，浏览器 UA 才给图。
+        // 其它来源保持原样，避免影响番茄/书旗图床。
+        httpHeaders: item.source == 'wenku8'
+            ? const {'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'}
+            : const {},
         memCacheWidth: cacheWidth.clamp(1, 1200),
         fadeInDuration: MediaQuery.disableAnimationsOf(context)
             ? Duration.zero
