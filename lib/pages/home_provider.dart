@@ -6,6 +6,7 @@ import '../models/home_cell.dart';
 import '../models/media_item.dart';
 import '../services/api_client.dart';
 import '../services/app_log.dart';
+import '../services/wenku8/wenku8_loaders.dart';
 import '../services/frame_stats.dart';
 import '../services/backend_transport.dart';
 import '../services/home_feed_cache.dart';
@@ -1539,8 +1540,13 @@ class HomeNotifier extends Notifier<HomeState> {
 }
 
 final homeProvider = NotifierProvider<HomeNotifier, HomeState>(
-  // 首页使用本地分类，包含独立短篇流；服务端分类表没有对应的短剧/漫剧组合。
-  () => HomeNotifier(usesLocalTabs: true),
+  // 青枢：首页数据源换成 wenku8 规则源（番茄后端已移除）。
+  // 书城网格 / 卡片 / 搜索全走框架自己的皮，wenku8 只提供数据。
+  () => HomeNotifier(
+    usesLocalTabs: true,
+    indexedHomepageLoader: wenku8HomepageLoader,
+    searchLoader: wenku8HomeSearchTabs,
+  ),
 );
 
 // Note: 底部导航的短剧目的地用第二个 HomeNotifier 实例而不是复用 homeProvider，
