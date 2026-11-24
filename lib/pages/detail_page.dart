@@ -13,6 +13,7 @@ import '../models/media_item.dart';
 import '../models/media_description.dart';
 import '../models/series_detail.dart';
 import '../models/shuqi_book.dart';
+import '../services/wenku8/wenku8_source.dart' as wenku8;
 import '../services/api_client.dart';
 import '../services/app_theme_style.dart';
 import '../services/audio_history.dart';
@@ -2424,6 +2425,7 @@ class _DetailPageState extends State<DetailPage> {
         // 详情页注入的缓存（离线下载/测试用内存缓存）即阅读器的缓存；
         // 生产调用方不传时为 null，阅读器沿用默认的 ChapterCacheStore。
         chapterCache: widget.chapterCache,
+        chapterLoader: widget.chapterLoader,
       ),
     };
     await _push(page, replace: replace);
@@ -2507,6 +2509,22 @@ Future<void> openBookDetail(
           bookId: item.id,
           initialTitle: item.title,
           initialCover: item.cover,
+        ),
+      ),
+    );
+    return;
+  }
+  // 青枢：wenku8 条目走框架详情页，detail / 目录 / 正文全由 wenku8 源提供。
+  if (wenku8.isWenku8Item(item)) {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => DetailPage(
+          item: item,
+          detailLoader: wenku8.fetchDetail,
+          directoryLoader: wenku8.fetchDirectory,
+          chapterLoader: wenku8.fetchChapterText,
+          autoOpenReader: false,
         ),
       ),
     );

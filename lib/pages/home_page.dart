@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/home_cell.dart';
 import '../models/search_discovery.dart';
 import '../models/media_item.dart';
-import 'package:kazumi/pages/novel/novel_search_page.dart';
 import '../services/api_client.dart';
 import '../services/app_log.dart';
 import '../services/app_style_tokens.dart';
@@ -20,6 +19,7 @@ import '../services/shell_visibility.dart';
 import '../services/home_continue_preferences.dart';
 import '../services/home_page_affinity.dart';
 import '../services/library_store.dart';
+import '../services/wenku8/wenku8_loaders.dart';
 import '../widgets/home/classic_home_feed_states.dart';
 import '../widgets/home/classic_home_skeleton.dart';
 import '../widgets/home/classic_home_stream_footer.dart';
@@ -552,16 +552,8 @@ class _HomePageState extends ConsumerState<HomePage> {
     final identity = ref.read(homeProvider.notifier).identityOf(target);
     final kind = identity.kind;
 
-    // 【青枢】「小说」分类直接换成 Kazumi 的轻小说页。
-    //
-    // 为什么不再走番茄内容流：番茄后端（libfqapi_core.so）已从本项目移除，
-    // 上游的首页 feed 全靠它拉数据，没有后端就只能显示「网络连接异常」。
-    // 青枢要读的是 wenku8 规则源，所以这里把「小说」标签整个交给 Kazumi
-    // 的 NovelSearchPage —— 它读随包的 assets/rules/novel/wenku8.json 和
-    // 4326 本书目索引，不依赖任何在线后端。
-    if (identity.name == '小说') {
-      return const NovelSearchPage();
-    }
+    // 【青枢】「小说」不再用 Kazumi 的独立页：wenku8 数据已经通过
+    // homeProvider 的注入 loader 喂进框架，这里照常走框架书城网格。
     if (kind == 'ugc') {
       return ValueListenableBuilder<int?>(
         valueListenable: shellVisibleTab,
@@ -954,7 +946,10 @@ class _HomePageState extends ConsumerState<HomePage> {
   void _openSearch() {
     Navigator.push(
       context,
-      SearchRoute.open<void>(context, builder: (_) => const SearchPage()),
+      SearchRoute.open<void>(
+        context,
+        builder: (_) => SearchPage(searchLoader: wenku8SearchTabs),
+      ),
     );
   }
 
