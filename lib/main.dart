@@ -79,6 +79,7 @@ import 'widgets/unsupported_feature_page.dart';
 import 'widgets/home/home_design.dart';
 import 'widgets/home/home_skeleton.dart';
 import 'widgets/home/classic_home_skeleton.dart';
+import 'package:kazumi/kazumi_bootstrap.dart';
 
 Future<void> main() async {
   // 绑定初始化与 runApp 必须处在同一个 Zone：此前 `ensureInitialized` 在
@@ -201,6 +202,9 @@ Future<void> _loadLocalData() async {
   await Future.wait<void>([
     // Load before interactive pages mount, so a saved opt-out applies at launch.
     optional(HapticPreferences.instance.load),
+    // 【青枢】装配 Kazumi 模块（轻小说规则源 / 书架 / 阅读偏好 / 朗读）。
+    // 放在可选段：它失败只让轻小说不可用，不该拖垮整个启动。
+    optional(KazumiBootstrap.ensureReady),
     LibraryStore.instance.init(),
     // The 加入书架 collection is optional data: a failure here must not block
     // startup, which is why it shares the retryable bootstrap with the history.
