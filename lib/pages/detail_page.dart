@@ -2028,8 +2028,33 @@ class _DetailPageState extends State<DetailPage> {
     if (wenku8.isWenku8Item(widget.item)) {
       final wGen = ++_openGeneration;
       setState(() => _opening = true);
+      // 整本抓取可能很久，先弹一个进度框，避免用户以为卡死。
+      final progress = ValueNotifier<String>('正在连接 wenku8…');
+      var dialogShown = true;
+      unawaited(
+        showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => AlertDialog(
+            title: const Text('正在转存到书架'),
+            content: ValueListenableBuilder<String>(
+              valueListenable: progress,
+              builder: (_, value, __) => Text(value),
+            ),
+          ),
+        ).whenComplete(() => dialogShown = false),
+      );
       try {
-        final imported = await localizeToShelf(widget.item);
+        final imported = await localizeToShelf(
+          widget.item,
+          onProgress: (done, total) {
+            progress.value = '已抓取 ' + done.toString() + '/' + total.toString() + ' 章';
+          },
+        );
+        if (dialogShown && mounted) {
+          Navigator.of(context, rootNavigator: true).pop();
+          dialogShown = false;
+        }
         await ShelfStore.instance.add(imported.toMediaItem());
         if (!mounted || wGen != _openGeneration) return;
         // 转存完成后直接进阅读页；本地书点听书即系统朗读。
@@ -2062,9 +2087,14 @@ class _DetailPageState extends State<DetailPage> {
           ),
         );
       } catch (e) {
+        if (dialogShown && mounted) {
+          Navigator.of(context, rootNavigator: true).pop();
+          dialogShown = false;
+        }
         if (mounted) {
+          final msg = e is StateError ? e.message : e.toString();
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(SystemTts.errorMessage(e))),
+            SnackBar(content: Text('转存失败：' + msg)),
           );
         }
       } finally {
