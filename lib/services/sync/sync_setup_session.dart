@@ -147,14 +147,15 @@ class _SetupSession implements SyncSetupSession {
       }
       final xml = XmlDocument.parse(utf8.decode(response.bytes));
       final byId = <String, SyncFolder>{};
-      for (final entry in xml.findAllElements(
-        'response',
-        namespaceUri: 'DAV:',
-      )) {
-        if (entry.findAllElements('collection', namespaceUri: 'DAV:').isEmpty) {
+      // xml 6.x 的 findAllElements / getElement 没有 namespaceUri 参数
+      // （那是 7.x 才加的）。这里改成按 local name 匹配：
+      // WebDAV 的 propfind 响应里 response/collection/href 都是 DAV: 命名空间，
+      // 按 local 名取不会误伤，也兼容 6 和 7 两个版本。
+      for (final entry in xml.findAllElements('response')) {
+        if (entry.findAllElements('collection').isEmpty) {
           continue;
         }
-        final href = entry.getElement('href', namespaceUri: 'DAV:')?.innerText;
+        final href = entry.getElement('href')?.innerText;
         if (href == null) continue;
         final target = uri.resolve(href).normalizePath();
         if (target.userInfo.isNotEmpty ||
