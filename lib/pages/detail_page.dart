@@ -2357,7 +2357,7 @@ class _DetailPageState extends State<DetailPage> {
   /// 本地书走 localOnly：图片按块渲染、听书自动用系统朗读。
   static final Map<String, String> _wenku8LocalIds = <String, String>{};
 
-  Future<void> _openWenku8LocalBook() async {
+  Future<void> _openWenku8LocalBook({int startIndex = 0}) async {
     if (_opening) return;
     final wGen = ++_openGeneration;
     setState(() => _opening = true);
@@ -2406,9 +2406,9 @@ class _DetailPageState extends State<DetailPage> {
           builder: (_) => ReaderPage(
             bookId: local.id,
             title: local.title,
-            cover: local.coverPath ?? '',
+            cover: local.coverPath ?? widget.item.cover,
             chapters: local.chapters,
-            startIndex: 0,
+            startIndex: startIndex.clamp(0, local.chapters.length - 1),
             localOnly: true,
             readerStore: widget.readerStore,
             imageProviderFactory: (image) => CachedNetworkImageProvider(
@@ -2473,6 +2473,13 @@ class _DetailPageState extends State<DetailPage> {
     ++_openGeneration;
     ++_historyGeneration;
     if (_opening) setState(() => _opening = false);
+    if (wenku8.isWenku8Item(widget.item)) {
+      // 目录里点某一章也走本地转存：直接进在线页会退回纯文本抽取，
+      // 插图又变回 "[图片] url"。转存后直接定位到点的这一章。
+      final picked = _allChapters.indexWhere((c) => c.itemId == chapter.itemId);
+      await _openWenku8LocalBook(startIndex: picked < 0 ? 0 : picked);
+      return;
+    }
     if (_isVideo && !supportsVideoPlayback) {
       ScaffoldMessenger.of(
         context,
