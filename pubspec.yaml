@@ -31,6 +31,11 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # 【青枢合并】Kazumi 动漫模块作为内嵌包。
+  # 保留 package:kazumi/... 命名空间，所以那 199 处 import 一行都不用改。
+  kazumi:
+    path: packages/kazumi
+
   http: ^1.6.0
   crypto: 3.0.8
   characters: ^1.4.1

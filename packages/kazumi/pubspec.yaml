@@ -1,0 +1,93 @@
+name: kazumi
+description: "青枢动漫模块（内嵌包）— 规则源 + 番剧 + 播放器"
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ^3.12.2
+  flutter: ">=3.50.1"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # 网络与解析（规则源 / XPath）
+  dio: ^5.11.0
+  cookie_jar: ^4.0.9
+  crypto: ^3.0.6
+  connectivity_plus: ^7.3.1
+  enough_convert: ^1.7.1
+  http: ^1.6.0
+  ech_http: ^0.2.4
+  xpath_selector: ^3.0.2
+  xpath_selector_html_parser: ^3.0.1
+  json_path: ^0.9.0
+  html: any
+
+  # 存储
+  path_provider: ^2.1.5
+  hive_ce: ^2.16.0
+  hive_ce_flutter: ^2.3.3
+  shared_preferences: ^2.3.0
+
+  # 状态管理（Kazumi 原有）
+  mobx: ^2.6.0
+  flutter_mobx: ^2.3.0
+  flutter_modular: ^7.1.0
+
+  # 播放与媒体
+  # 跟随主项目版本，避免 pub 解析冲突（主项目 pubspec 已声明 1.2.6 / 2.0.1）。
+  media_kit: 1.2.6
+  media_kit_video: 2.0.1
+  canvas_danmaku: ^0.3.3
+  flutter_volume_controller: ^2.0.2
+  screen_brightness_android: ^2.1.3
+  screen_brightness_ios: ^2.1.2
+  screen_brightness_platform_interface: ^2.1.0
+
+  # 音频后台
+  audio_service: ^0.18.15
+  audio_session: ^0.2.2
+
+  # UI 辅助
+  cached_network_image: ^3.4.1
+  flutter_cache_manager: ^3.4.1
+  flutter_svg: ^2.2.3
+  flutter_rating_bar: ^4.0.1
+  scrollview_observer: ^1.22.0
+  skeletonizer: ^2.1.2
+  fl_chart: ^1.1.1
+  photo_view: ^0.15.0
+  material_color_utilities: any
+  dynamic_color: ^1.9.0
+  flutter_displaymode: ^0.7.0
+
+  # 工具
+  url_launcher: ^6.3.0
+  file_picker: ^10.3.7
+  image: ^4.8.0
+  logger: ^2.6.2
+  synchronized: any
+  path: any
+  ffi: ^2.1.0
+  webdav_client: ^1.2.2
+  dlna_dart: ^0.1.1
+  flutter_foreground_task: ^9.0.0
+  saver_gallery: ^4.1.0
+  antlr4: ^4.13.2
+  upgrader: ^12.3.0
+  open_filex: ^4.7.0
+  material_new_shapes: ^1.0.0
+  image_picker: ^1.2.1
+  app_links: ^7.2.2
+
+  # WebView（番剧站点需要）
+  flutter_inappwebview_platform_interface: ^1.3.0+1
+  flutter_inappwebview_android: ^1.1.3
+  flutter_inappwebview_ios: ^1.1.2
+  flutter_inappwebview_macos: ^1.1.2
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
