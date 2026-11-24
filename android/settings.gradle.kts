@@ -28,7 +28,10 @@ pluginManagement {
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    id("com.android.application") version "9.3.3" apply false
+    // 对齐 Kazumi 侧的 9.3.1：9.3.3 会拒绝 flutter_inappwebview_android 1.1.3
+    // 里的 getDefaultProguardFile('proguard-android.txt')（新版 AGP 只认
+    // proguard-android-optimize.txt）。9.3.1 仍然接受旧写法。
+    id("com.android.application") version "9.3.1" apply false
     id("org.jetbrains.kotlin.android") version "2.4.20" apply false
 }
 
