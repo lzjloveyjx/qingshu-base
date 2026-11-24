@@ -248,7 +248,9 @@ class _DetailPageState extends State<DetailPage> {
 
   /// Source label on the identity block: the fqapp catalogue is 番茄's, and
   /// short dramas/manju/comics are not "小说".
-  String get _sourceLabel => '番茄${kindLabels[widget.item.kind] ?? '小说'}';
+  String get _sourceLabel => wenku8.isWenku8Item(widget.item)
+      ? 'wenku8轻小说'
+      : '番茄${kindLabels[widget.item.kind] ?? '小说'}';
 
   String get _readLabel => switch (widget.item.kind) {
     'video' || 'manju' => _resumeIndex == null ? '开始观看' : '继续观看',
