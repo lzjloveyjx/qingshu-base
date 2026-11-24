@@ -148,6 +148,18 @@ android {
             )
         }
     }
+
+    // 关掉 release 打包时的 lint 检查。
+    //
+    // 原因：AGP 9.x 的 lintVitalAnalyzeRelease 在分析 file_selector_android 的
+    // FileUtils.java 时会崩 —— Android lint 自己的 CommentDetector 报
+    // NoSuchMethodError: 'java.lang.Object java.util.List.removeLast()'
+    // （lint 内部 bug，不是我们代码的问题）。它只影响打包期的 lint 分析，
+    // 不影响产物正确性，所以这里直接跳过。
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
 }
 
 kotlin {
