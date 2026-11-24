@@ -135,6 +135,17 @@ Future<List<List<Chapter>>> fetchDirectory(String bookUrl, {String tab = '小说
   }
 }
 
+/// 抓一章原始 HTML（结构化转存要自己抽插图，不能先用纯文本抽取器）。
+Future<String> fetchChapterHtml(Chapter chapter) async {
+  try {
+    final p = await _plugin();
+    return await p.fetchNovelChapter(chapter.itemId);
+  } catch (e) {
+    debugPrint('wenku8 fetchChapterHtml failed: ' + e.toString());
+    return '';
+  }
+}
+
 Future<String> fetchChapterText(Chapter chapter) async {
   try {
     final p = await _plugin();
