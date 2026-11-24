@@ -52,7 +52,9 @@ dependencies:
   flutter_riverpod: ^3.4.3
   archive: ^4.3.0
   html: 0.15.6
-  xml: ^7.0.1
+  # 降到 6.x：内嵌的 Kazumi 动漫模块依赖 webdav_client，后者锁死 xml ^6.2.2。
+  # 本项目只用到 XmlDocument.parse / XmlElement 等基础 API，6 与 7 无差异。
+  xml: ^6.2.2
   flutter_lucide: 1.59.0
   cupertino_icons: ^1.0.8
   liquid_glass_easy:

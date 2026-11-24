@@ -53,7 +53,7 @@ dependencies:
 
   # UI 辅助
   cached_network_image: ^4.0.0
-  flutter_cache_manager: ^3.4.1
+  flutter_cache_manager: ^3.4.2
   flutter_svg: ^2.3.0
   flutter_rating_bar: ^4.0.1
   scrollview_observer: ^1.22.0
@@ -71,7 +71,7 @@ dependencies:
   logger: ^2.6.2
   synchronized: any
   path: any
-  ffi: ^2.1.0
+  ffi: ^2.1.4
   webdav_client: ^1.2.2
   dlna_dart: ^0.1.1
   flutter_foreground_task: ^9.0.0
