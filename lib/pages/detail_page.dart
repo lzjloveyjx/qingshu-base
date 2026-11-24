@@ -881,7 +881,9 @@ class _DetailPageState extends State<DetailPage> {
                   primaryLabel: _readBarLabel,
                   primaryIcon: CupertinoIcons.play_fill,
                   onPrimary: _supported && !_loading && _allChapters.isNotEmpty
-                      ? _openLastPosition
+                      ? (wenku8.isWenku8Item(widget.item)
+                          ? _openWenku8LocalBook
+                          : _openLastPosition)
                       : null,
                   primaryLoading: _opening,
                   secondaryLabel: _shelfLabel,
@@ -2022,86 +2024,9 @@ class _DetailPageState extends State<DetailPage> {
   /// audio progress left off.
   Future<void> _openListening() async {
     if (_allChapters.isEmpty || _opening) return;
-    // 青枢：wenku8 没有服务端音源。听书的正确做法是「转存成本地书」——
-    // 基座对本地书（localOnly）强制走系统朗读，导入后点听书即能朗读，
-    // 而且顺带能在书架里离线阅读。
+    // wenku8：听书同样是「转存成本地书 → 系统朗读」，与阅读入口同一条路。
     if (wenku8.isWenku8Item(widget.item)) {
-      final wGen = ++_openGeneration;
-      setState(() => _opening = true);
-      // 整本抓取可能很久，先弹一个进度框，避免用户以为卡死。
-      final progress = ValueNotifier<String>('正在连接 wenku8…');
-      var dialogShown = true;
-      unawaited(
-        showDialog<void>(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => AlertDialog(
-            title: const Text('正在转存到书架'),
-            content: ValueListenableBuilder<String>(
-              valueListenable: progress,
-              builder: (_, value, __) => Text(value),
-            ),
-          ),
-        ).whenComplete(() => dialogShown = false),
-      );
-      try {
-        final imported = await localizeToShelf(
-          widget.item,
-          onProgress: (done, total) {
-            progress.value = '已抓取 ' + done.toString() + '/' + total.toString() + ' 章';
-          },
-        );
-        if (dialogShown && mounted) {
-          Navigator.of(context, rootNavigator: true).pop();
-          dialogShown = false;
-        }
-        await ShelfStore.instance.add(imported.toMediaItem());
-        if (!mounted || wGen != _openGeneration) return;
-        // 转存完成后直接进阅读页；本地书点听书即系统朗读。
-        await Navigator.push<void>(
-          context,
-          MaterialPageRoute<void>(
-            builder: (_) => ReaderPage(
-              bookId: imported.id,
-              title: imported.title,
-              cover: imported.coverPath ?? '',
-              chapters: imported.chapters,
-              startIndex: 0,
-              localOnly: true,
-              readerStore: widget.readerStore,
-              // wenku8 图床对 dart:io 默认 UA 返回 403；插图走网络加载，
-              // 这里给它一个浏览器 UA，图才出得来。
-              imageProviderFactory: (image) => CachedNetworkImageProvider(
-                image.url,
-                headers: const {
-                  'user-agent':
-                      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                      'AppleWebKit/537.36 (KHTML, like Gecko) '
-                      'Chrome/141.0.0.0 Safari/537.36',
-                },
-                cacheManager: PosterCache.instance,
-              ),
-              chapterLoader: (chapter) =>
-                  ImportedBookStore.instance.chapterText(imported.id, chapter.itemId),
-            ),
-          ),
-        );
-      } catch (e) {
-        if (dialogShown && mounted) {
-          Navigator.of(context, rootNavigator: true).pop();
-          dialogShown = false;
-        }
-        if (mounted) {
-          final msg = e is StateError ? e.message : e.toString();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('转存失败：' + msg)),
-          );
-        }
-      } finally {
-        if (mounted && wGen == _openGeneration) {
-          setState(() => _opening = false);
-        }
-      }
+      await _openWenku8LocalBook();
       return;
     }
     final generation = ++_openGeneration;
@@ -2425,6 +2350,95 @@ class _DetailPageState extends State<DetailPage> {
     }
     _autoOpened = true;
     await _openLastPosition(replace: true);
+  }
+
+  /// 青枢：wenku8 的书没有服务端音源，正文也只能靠规则抓。
+  /// 统一做法 —— 首次打开时转存成本地书（结构化章节，含插图），之后直接复用。
+  /// 本地书走 localOnly：图片按块渲染、听书自动用系统朗读。
+  static final Map<String, String> _wenku8LocalIds = <String, String>{};
+
+  Future<void> _openWenku8LocalBook() async {
+    if (_opening) return;
+    final wGen = ++_openGeneration;
+    setState(() => _opening = true);
+    final progress = ValueNotifier<String>('正在连接 wenku8…');
+    var dialogShown = true;
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => AlertDialog(
+          title: const Text('正在转存到书架'),
+          content: ValueListenableBuilder<String>(
+            valueListenable: progress,
+            builder: (_, value, __) => Text(value),
+          ),
+        ),
+      ).whenComplete(() => dialogShown = false),
+    );
+    void closeDialog() {
+      if (dialogShown && mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+        dialogShown = false;
+      }
+    }
+
+    try {
+      ImportedBook? book;
+      final cachedId = _wenku8LocalIds[widget.item.id];
+      if (cachedId != null) {
+        book = await ImportedBookStore.instance.book(cachedId);
+      }
+      book ??= await localizeToShelf(
+        widget.item,
+        onProgress: (done, total) {
+          progress.value = '已抓取 ' + done.toString() + '/' + total.toString() + ' 章';
+        },
+      );
+      final local = book;
+      _wenku8LocalIds[widget.item.id] = local.id;
+      await ShelfStore.instance.add(local.toMediaItem());
+      closeDialog();
+      if (!mounted || wGen != _openGeneration) return;
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => ReaderPage(
+            bookId: local.id,
+            title: local.title,
+            cover: local.coverPath ?? '',
+            chapters: local.chapters,
+            startIndex: 0,
+            localOnly: true,
+            readerStore: widget.readerStore,
+            imageProviderFactory: (image) => CachedNetworkImageProvider(
+              image.url,
+              headers: const {
+                'user-agent':
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                    'AppleWebKit/537.36 (KHTML, like Gecko) '
+                    'Chrome/141.0.0.0 Safari/537.36',
+              },
+              cacheManager: PosterCache.instance,
+            ),
+            chapterLoader: (chapter) =>
+                ImportedBookStore.instance.chapterText(local.id, chapter.itemId),
+          ),
+        ),
+      );
+    } catch (e) {
+      closeDialog();
+      if (mounted) {
+        final msg = e is StateError ? e.message : e.toString();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('转存失败：' + msg)),
+        );
+      }
+    } finally {
+      if (mounted && wGen == _openGeneration) {
+        setState(() => _opening = false);
+      }
+    }
   }
 
   Future<void> _openLastPosition({bool replace = false}) async {
