@@ -23,10 +23,12 @@ const int _kChapterRetries = 2;
 /// 单章 HTML → 结构化章节正文（文字 + 插图）。
 String buildStructuredChapter(String html, {String baseUrl = ''}) {
   final document = html_parser.parse(html);
-  final body = document.body;
+  // 只取正文容器（wenku8 的规则里 chapterContent == //div[@id='content']）。
+  // 直接扫 body 会把导航、广告、页脚一起当成正文。
+  final container = document.querySelector('#content') ?? document.body;
   final blocks = <ChapterBlock>[];
-  if (body != null) {
-    for (final node in body.nodes) {
+  if (container != null) {
+    for (final node in container.nodes) {
       _collect(node, blocks, baseUrl);
     }
   }
