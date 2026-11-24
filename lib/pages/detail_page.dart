@@ -2,6 +2,7 @@ import '../widgets/desktop_chapter_sidebar.dart';
 import '../services/desktop_platform.dart';
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
@@ -26,6 +27,7 @@ import '../services/connectivity_status.dart';
 import '../services/system_tts.dart';
 import '../services/imported_book_store.dart';
 import '../services/library_store.dart';
+import '../services/poster_cache.dart';
 import '../services/media_history_store.dart';
 import '../services/player_history.dart';
 import '../services/platform_capabilities.dart';
@@ -2042,6 +2044,18 @@ class _DetailPageState extends State<DetailPage> {
               startIndex: 0,
               localOnly: true,
               readerStore: widget.readerStore,
+              // wenku8 图床对 dart:io 默认 UA 返回 403；插图走网络加载，
+              // 这里给它一个浏览器 UA，图才出得来。
+              imageProviderFactory: (image) => CachedNetworkImageProvider(
+                image.url,
+                headers: const {
+                  'user-agent':
+                      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                      'AppleWebKit/537.36 (KHTML, like Gecko) '
+                      'Chrome/141.0.0.0 Safari/537.36',
+                },
+                cacheManager: PosterCache.instance,
+              ),
               chapterLoader: (chapter) =>
                   ImportedBookStore.instance.chapterText(imported.id, chapter.itemId),
             ),
