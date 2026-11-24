@@ -1,0 +1,529 @@
+part of 'library_page.dart';
+
+const double _classicTouchTarget = 48;
+
+/// Three-layout controls ported from f329399's library_shelf_widgets.dart.
+enum _ClassicMenuAction {
+  importBook('导入图书', LucideIcons.plus),
+  cachedBooks('离线缓存', LucideIcons.download),
+  switchGrid('切换为宫格', LucideIcons.layout_grid, BookshelfLayout.grid),
+  switchDouble('切换为双列', LucideIcons.columns_2, BookshelfLayout.doubleColumn),
+  switchList('切换为列表', LucideIcons.list, BookshelfLayout.list),
+  filter('排序与筛选', Icons.filter_list),
+  categories('分类与分组', LucideIcons.folder),
+  clearFilters('清除筛选', Icons.filter_alt_off_outlined),
+  edit('编辑书架', LucideIcons.pencil),
+  clearHistory('清空历史', LucideIcons.trash);
+
+  const _ClassicMenuAction(this.label, this.icon, [this.layout]);
+  final String label;
+  final IconData icon;
+  final BookshelfLayout? layout;
+}
+
+class _ClassicTabButton extends StatelessWidget {
+  const _ClassicTabButton({
+    super.key,
+    required this.label,
+    required this.selected,
+    required this.palette,
+    required this.onTap,
+    required this.width,
+  });
+
+  final String label;
+  final bool selected;
+  final HomePalette palette;
+  final VoidCallback onTap;
+
+  /// The reserved width of the tab.
+  ///
+  /// A tab label is 18sp when selected and 15sp otherwise. Without a
+  /// reserved width the tab would change width the moment the selection
+  /// moves, the whole row would shift under the finger, and the tabs would
+  /// visibly jump on every swipe. The label is centred inside the reserved
+  /// width instead.
+  final double width;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    selected: selected,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: width,
+        child: Padding(
+          // 上下 2 → 1、标签与下划线间距 5 → 4（issue #478）：只削掉浮量，
+          // 下划线仍占固定 3dp，滑动时的高度基准不变。
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // The label is centred in the reserved width, so the text can
+              // change size without moving the tab.
+              Center(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: selected ? 18 : 15,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                    letterSpacing: -.3,
+                    color: selected ? palette.ink : palette.muted,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              // The underline is drawn once for the whole row now, so it can
+              // slide between tabs instead of each tab fading its own in.
+              SizedBox(width: 26, height: 3),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+class _ClassicLayoutSegments extends StatelessWidget {
+  const _ClassicLayoutSegments({
+    required this.current,
+    required this.palette,
+    required this.onChanged,
+  });
+
+  final BookshelfLayout current;
+  final HomePalette palette;
+  final ValueChanged<BookshelfLayout> onChanged;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(3),
+    decoration: BoxDecoration(
+      color: palette.soft,
+      borderRadius: BorderRadius.circular(ShelfTokens.radiusButton),
+      border: Border.all(color: palette.line, width: .5),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final layout in BookshelfLayout.values)
+          Tooltip(
+            message: layout.menuLabel,
+            excludeFromSemantics: true,
+            child: Semantics(
+              button: true,
+              selected: layout == current,
+              label: layout.menuLabel,
+              onTap: () => onChanged(layout),
+              excludeSemantics: true,
+              child: InkWell(
+                key: Key('shelf-layout-${layout.segmentKey}'),
+                onTap: () => onChanged(layout),
+                borderRadius: BorderRadius.circular(9),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    minWidth: _classicTouchTarget,
+                    minHeight: _classicTouchTarget,
+                  ),
+                  child: Center(
+                    child: Container(
+                      width: 34,
+                      height: 30,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: layout == current
+                            ? HomePalette.accent.withValues(alpha: .15)
+                            : Colors.transparent,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Icon(
+                        layout.menuIcon,
+                        size: 17,
+                        color: layout == current
+                            ? HomePalette.accent
+                            : palette.muted,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
+/// 手机选择器与宽屏分段控件共用版式状态和持久化入口。
+class _ClassicLayoutPicker extends StatelessWidget {
+  const _ClassicLayoutPicker({
+    required this.current,
+    required this.palette,
+    required this.onChanged,
+  });
+
+  final BookshelfLayout current;
+  final HomePalette palette;
+  final ValueChanged<BookshelfLayout> onChanged;
+
+  static String labelOf(BookshelfLayout layout) => switch (layout) {
+    BookshelfLayout.grid => '宫格',
+    BookshelfLayout.doubleColumn => '双列',
+    BookshelfLayout.list => '列表',
+  };
+
+  Future<void> _showLayouts(BuildContext context) async {
+    final anchor = context.findRenderObject()! as RenderBox;
+    final overlay =
+        Navigator.of(context).overlay!.context.findRenderObject()! as RenderBox;
+    final rect =
+        anchor.localToGlobal(Offset.zero, ancestor: overlay) & anchor.size;
+    final selected = await showMenu<BookshelfLayout>(
+      context: context,
+      position: RelativeRect.fromSize(rect, overlay.size),
+      color: palette.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: palette.line, width: .6),
+      ),
+      elevation: 4,
+      items: [
+        for (final layout in BookshelfLayout.values)
+          CheckedPopupMenuItem(
+            key: Key('shelf-layout-${layout.segmentKey}'),
+            value: layout,
+            checked: layout == current,
+            child: Row(
+              children: [
+                Icon(layout.menuIcon, size: 16, color: palette.ink),
+                const SizedBox(width: 10),
+                Text(
+                  labelOf(layout),
+                  style: TextStyle(fontSize: 14, color: palette.ink),
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+    if (selected != null && context.mounted) onChanged(selected);
+  }
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: '切换版式',
+    child: _ClassicToolbarPill(
+      key: const Key('shelf-layout-picker'),
+      palette: palette,
+      onTap: () => unawaited(_showLayouts(context)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            current.menuIcon,
+            size: ShelfTokens.iconInline,
+            color: palette.muted,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            labelOf(current),
+            style: TextStyle(
+              fontSize: ShelfTokens.subtitle,
+              fontWeight: FontWeight.w500,
+              color: palette.ink,
+            ),
+          ),
+          const SizedBox(width: 2),
+          Icon(LucideIcons.chevron_down, size: 13, color: palette.muted),
+        ],
+      ),
+    ),
+  );
+}
+
+/// 经典书架工具栏的分组胶囊：与「今日已读」胶囊同款外形，也是分组入口
+/// （点开就是现有的分类弹层）。选中分组时用强调色描边与文字，长分组名
+/// 只省略不折行，不会把工具栏挤高一行。
+class _ClassicGroupChip extends StatelessWidget {
+  const _ClassicGroupChip({
+    super.key,
+    required this.label,
+    required this.active,
+    required this.palette,
+    required this.onTap,
+    this.showChevron = false,
+  });
+
+  final String label;
+  final bool active;
+  final HomePalette palette;
+  final VoidCallback onTap;
+
+  final bool showChevron;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = active && !palette.eink;
+    return Semantics(
+      button: true,
+      selected: active,
+      label: '书架分组：$label',
+      onTap: onTap,
+      excludeSemantics: true,
+      child: Tooltip(
+        message: '书架分组：$label',
+        triggerMode: TooltipTriggerMode.manual,
+        child: _ClassicToolbarPill(
+          palette: palette,
+          active: active,
+          onTap: onTap,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                LucideIcons.folder,
+                size: ShelfTokens.iconInline,
+                color: accent ? HomePalette.accent : palette.muted,
+              ),
+              const SizedBox(width: 5),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: ShelfTokens.subtitle,
+                    fontWeight: FontWeight.w500,
+                    color: accent ? HomePalette.accent : palette.ink,
+                  ),
+                ),
+              ),
+              if (showChevron) ...[
+                const SizedBox(width: 2),
+                Icon(
+                  LucideIcons.chevron_down,
+                  size: 13,
+                  color: accent ? HomePalette.accent : palette.muted,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Keep ink on the visible capsule and let Material pad the touch target.
+class _ClassicToolbarPill extends StatelessWidget {
+  const _ClassicToolbarPill({
+    super.key,
+    required this.palette,
+    required this.onTap,
+    required this.child,
+    this.active = false,
+  });
+
+  final HomePalette palette;
+  final VoidCallback onTap;
+  final Widget child;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = active && !palette.eink;
+    return TextButton(
+      onPressed: onTap,
+      clipBehavior: Clip.antiAlias,
+      style: TextButton.styleFrom(
+        backgroundColor: palette.soft,
+        foregroundColor: accent ? HomePalette.accent : palette.ink,
+        minimumSize: const Size(_classicTouchTarget, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        visualDensity: VisualDensity.standard,
+        tapTargetSize: MaterialTapTargetSize.padded,
+        shape: const StadiumBorder(),
+        side: palette.eink || active
+            ? BorderSide(color: accent ? HomePalette.accent : palette.line)
+            : BorderSide.none,
+      ),
+      child: child,
+    );
+  }
+}
+
+class _ClassicEmptyNotice extends StatelessWidget {
+  const _ClassicEmptyNotice({
+    required this.icon,
+    required this.title,
+    this.message,
+    this.actionLabel,
+    this.actionKey,
+    this.onAction,
+    this.onCachedBooks,
+    this.headerHeight = 0,
+  });
+
+  final IconData icon;
+  final String title;
+  final String? message;
+  final String? actionLabel;
+  final Key? actionKey;
+  final VoidCallback? onAction;
+  final VoidCallback? onCachedBooks;
+
+  /// 列表上方的动态头部高度（筛选状态栏 / 缓存扫描行）。空态锚点以固定
+  /// 头部（tab + toolbar）为基准：动态头部把内容区下推 X、高度压缩 X，
+  /// Align(−0.2) 锚点随之多沉 0.6X，比无动态头部的界面低 0.6 ×
+  /// headerHeight。补偿用底部垫空隙实现（见 build 注释），与屏高无关，
+  /// 且不能用 LayoutBuilder 换算 —— SliverFillRemaining 会查询
+  /// intrinsic dimensions，LayoutBuilder 不支持。
+  final double headerHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = HomePalette.of(context);
+    final largeText = MediaQuery.textScalerOf(context).scale(1) > 1.4;
+    final sectionPadding = largeText ? 8.0 : ShelfTokens.screenPadding;
+    final iconSize = largeText ? 24.0 : 48.0;
+    final iconPadding = largeText ? 8.0 : 20.0;
+    final titleGap = largeText ? 6.0 : 18.0;
+    final messageGap = largeText ? 2.0 : 6.0;
+    final actionGap = largeText ? 6.0 : 20.0;
+    final cachedBooksGap = largeText ? 2.0 : 10.0;
+    // Slightly above the geometric center: the header (tabs + toolbar) already
+    // occupies ~110dp, so a plain Center would sink the notice below the
+    // screen's visual center.
+    //
+    // Compensation geometry: the dynamic rows push the -0.2 anchor down by
+    // 0.6 × headerHeight. Padding the block by P at the bottom lifts the
+    // notice's own center by P/2 − 0.1P = 0.4P (the 0.1 factor comes from
+    // the -0.2 alignment scaling with block height), so 0.4P = 0.6 ×
+    // headerHeight → P = 1.5 × headerHeight restores the exact same
+    // on-screen center as the views without dynamic rows.
+    return Align(
+      alignment: const Alignment(0, -0.2),
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          sectionPadding,
+          sectionPadding,
+          sectionPadding,
+          sectionPadding + 1.5 * headerHeight,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: EdgeInsets.all(iconPadding),
+              decoration: BoxDecoration(
+                color: palette.soft,
+                borderRadius: BorderRadius.circular(ShelfTokens.radiusCard),
+              ),
+              child: Icon(
+                icon,
+                size: iconSize,
+                color: palette.eink
+                    ? Colors.black
+                    : palette.muted.withValues(alpha: .65),
+              ),
+            ),
+            SizedBox(height: titleGap),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                color: palette.ink,
+              ),
+            ),
+            if (message != null) ...[
+              SizedBox(height: messageGap),
+              Text(
+                message!,
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: palette.muted),
+              ),
+            ],
+            if (actionLabel != null) ...[
+              SizedBox(height: actionGap),
+              FilledButton(
+                key: actionKey,
+                onPressed: onAction,
+                style: FilledButton.styleFrom(
+                  backgroundColor: palette.eink
+                      ? palette.ink
+                      : HomePalette.accent,
+                  foregroundColor: palette.eink ? palette.canvas : Colors.white,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: largeText ? 20 : 24,
+                    vertical: largeText ? 8 : 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                ),
+                child: Text(actionLabel!),
+              ),
+            ],
+            if (onCachedBooks != null) ...[
+              SizedBox(height: cachedBooksGap),
+              TextButton.icon(
+                key: const Key('shelf-cached-books-button'),
+                onPressed: onCachedBooks,
+                style: TextButton.styleFrom(foregroundColor: palette.muted),
+                icon: const Icon(LucideIcons.download, size: 16),
+                label: const Text('查看离线缓存'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ClassicBottomAction extends StatelessWidget {
+  const _ClassicBottomAction({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.color,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final foreground = onTap == null ? color.withValues(alpha: .35) : color;
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(ShelfTokens.radiusButton),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 24, color: foreground),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w500,
+                height: 1.2,
+                color: foreground,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

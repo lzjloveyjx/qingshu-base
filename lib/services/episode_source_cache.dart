@@ -1,0 +1,373 @@
+import 'dart:async';
+import 'dart:convert';
+
+import '../models/media_item.dart';
+import 'api_client.dart';
+
+class EpisodeVariant {
+  final String name;
+  final String url;
+  final String keyHex;
+
+  /// Raw decoded height. It is metadata, not the quality tier for portrait
+  /// video (for example, a 720P portrait stream is usually 720x1280).
+  final int height;
+
+  /// Quality tier expressed as the decoded short edge. Zero means unknown.
+  final int qualityHeight;
+
+  const EpisodeVariant({
+    required this.name,
+    required this.url,
+    required this.keyHex,
+    required this.height,
+    this.qualityHeight = 0,
+  });
+}
+
+class EpisodeSource {
+  final String url;
+  final String keyHex;
+
+  /// All playable renditions of this episode, best-quality first
+  /// (official panel lists resolutions high→low). Empty when the upstream
+  /// only offered one stream — the quality row is hidden then.
+  final List<EpisodeVariant> variants;
+
+  /// 服务端分集方向（官方 `VideoInfo.vertical`），随取流响应下发。
+  /// `null` = 该响应没有这个字段（旧后端、离线缓存）；播放页把 null 与
+  /// false 一样当作「不竖屏」，保留「全屏观看」。
+  final bool? vertical;
+
+  /// Backend request sequence used to correlate the Rust source trace.
+  final String? sourceTraceId;
+
+  const EpisodeSource(
+    this.url, [
+    this.keyHex = '',
+    this.variants = const [],
+    this.vertical,
+    this.sourceTraceId,
+  ]);
+
+  EpisodeSource withVariant(EpisodeVariant variant) => EpisodeSource(
+    variant.url,
+    variant.keyHex,
+    variants,
+    vertical,
+    sourceTraceId,
+  );
+
+  factory EpisodeSource.fromResponse(Map<String, dynamic> response) {
+    final data = response['data'] is Map
+        ? Map<String, dynamic>.from(response['data'] as Map)
+        : response;
+    var rawUrl = (data['video_url'] ?? data['main_url'] ?? '')
+        .toString()
+        .trim();
+    if (rawUrl.isEmpty) rawUrl = _extractVideoUrl(response);
+    if (rawUrl.isEmpty) throw ApiException('获取播放地址失败');
+    final url = ApiClient.instance.absoluteUrl(rawUrl);
+    final uri = Uri.tryParse(url);
+    if (uri == null ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        uri.host.isEmpty) {
+      throw ApiException('获取播放地址失败');
+    }
+    final variants = <EpisodeVariant>[];
+    final rawVariants = data['variants'];
+    if (rawVariants is List) {
+      for (final row in rawVariants) {
+        if (row is! Map) continue;
+        final name = '${row['name']}'.trim();
+        final raw = '${row['url'] ?? ''}'.trim();
+        final key = '${row['key_hex'] ?? ''}'.trim();
+        if (name.isEmpty || raw.isEmpty) continue;
+        final vUrl = ApiClient.instance.absoluteUrl(raw);
+        final vUri = Uri.tryParse(vUrl);
+        if (vUri == null ||
+            (vUri.scheme != 'http' && vUri.scheme != 'https') ||
+            vUri.host.isEmpty) {
+          continue;
+        }
+        final parsedQuality = int.tryParse('${row['quality_height'] ?? ''}');
+        variants.add(
+          EpisodeVariant(
+            name: name,
+            url: vUrl,
+            keyHex: key,
+            height: int.tryParse('${row['height'] ?? ''}') ?? 0,
+            qualityHeight: parsedQuality != null && parsedQuality > 0
+                ? parsedQuality
+                : 0,
+          ),
+        );
+      }
+    }
+    final traceId =
+        '${response['source_trace_id'] ?? data['source_trace_id'] ?? ''}'
+            .trim();
+    return EpisodeSource(
+      url,
+      (data['key_hex'] ?? '').toString().trim(),
+      variants,
+      _verticalOf(data['vertical'] ?? response['vertical']),
+      traceId.isEmpty ? null : traceId,
+    );
+  }
+}
+
+final _qualityName = RegExp(r'(4K|2K|\d{3,4}P)', caseSensitive: false);
+
+/// Best-effort recovery for records written before `qualityHeight` existed.
+/// Portrait dimensions and encoded names are safe to map; ambiguous raw
+/// heights remain unknown.
+int? legacyDramaQualityHeight({
+  required int rawHeight,
+  required String variantName,
+}) {
+  final match = _qualityName.firstMatch(variantName.trim());
+  if (match != null) {
+    final token = match.group(1)!.toUpperCase();
+    if (token == '2K') return 1440;
+    if (token == '4K') return 2160;
+    final parsed = int.tryParse(token.substring(0, token.length - 1));
+    if (parsed != null && parsed > 0) return parsed;
+  }
+  return switch (rawHeight) {
+    1920 => 1080,
+    1280 => 720,
+    960 => 540,
+    854 => 480,
+    640 => 360,
+    1080 || 720 || 480 => rawHeight,
+    _ => null,
+  };
+}
+
+/// The rendition to try after [failed] could not start: the next lower one
+/// with a different stream, else the next higher one. Null when [failed] is
+/// not listed or no other stream exists.
+EpisodeVariant? fallbackVariant(List<EpisodeVariant> variants, String failed) {
+  final index = variants.indexWhere((variant) => variant.name == failed);
+  if (index < 0) return null;
+  final url = variants[index].url;
+  for (final variant in variants.skip(index + 1)) {
+    if (variant.url != url) return variant;
+  }
+  for (final variant in variants.take(index).toList().reversed) {
+    if (variant.url != url) return variant;
+  }
+  return null;
+}
+
+/// Lenient `vertical` decoding for the backend response.
+bool? _verticalOf(dynamic value) {
+  if (value is bool) return value;
+  if (value is num) return value != 0;
+  if (value is String) {
+    final text = value.trim().toLowerCase();
+    if (text == 'true' || text == '1') return true;
+    if (text == 'false' || text == '0') return false;
+  }
+  return null;
+}
+
+enum EpisodeSourceOrigin {
+  network,
+  cacheHit,
+  pending,
+  prefetchHit,
+  prefetchPending,
+}
+
+class EpisodeSourceRequest {
+  final Future<EpisodeSource> future;
+  final EpisodeSourceOrigin origin;
+
+  const EpisodeSourceRequest(this.future, this.origin);
+}
+
+/// Page-local address metadata only. Never creates a player or downloads video.
+/// Completed entries are bounded; outstanding demand requests remain joinable
+/// until they finish, even if a quick swipe temporarily leaves their episode.
+class EpisodeSourceCache {
+  static const timeToLive = Duration(minutes: 2);
+  static const capacity = 2;
+
+  /// [prefetch] is true only for speculative work started by [prefetch]; the
+  /// loader forwards it so the fetch can carry an explicit local purpose.
+  final Future<EpisodeSource> Function(
+    Chapter chapter, {
+    required bool prefetch,
+  })
+  _loader;
+  final Duration Function() _now;
+  final _ready = <String, _SourceEntry>{};
+  final _pending = <String, _SourceEntry>{};
+  Set<String>? _retained;
+  Future<void>? _prefetching;
+  bool _disposed = false;
+
+  EpisodeSourceCache({required this._loader, Duration Function()? now})
+    : _now = now ?? _monotonicClock();
+
+  void retainOnly(Set<String> ids) {
+    _retained = Set.of(ids);
+    _ready.removeWhere((id, _) => !ids.contains(id));
+  }
+
+  EpisodeSourceRequest request(Chapter chapter, {bool refresh = false}) =>
+      _request(chapter, refresh: refresh, prefetch: false);
+
+  EpisodeSourceRequest _request(
+    Chapter chapter, {
+    bool refresh = false,
+    required bool prefetch,
+  }) {
+    if (_disposed) throw StateError('Episode source cache is disposed');
+    final id = chapter.itemId;
+    if (refresh) invalidate(id);
+    _ready.removeWhere((_, entry) => !_fresh(entry));
+    final ready = _ready.remove(id);
+    if (ready != null) {
+      _ready[id] = ready;
+      return EpisodeSourceRequest(
+        ready.future,
+        ready.prefetched
+            ? EpisodeSourceOrigin.prefetchHit
+            : EpisodeSourceOrigin.cacheHit,
+      );
+    }
+    final pending = _pending[id];
+    if (pending != null && _fresh(pending)) {
+      return EpisodeSourceRequest(
+        pending.future,
+        pending.prefetched
+            ? EpisodeSourceOrigin.prefetchPending
+            : EpisodeSourceOrigin.pending,
+      );
+    }
+    final entry = _SourceEntry(_now(), prefetch);
+    _pending[id] = entry;
+    entry.future = Future.sync(() => _loader(chapter, prefetch: prefetch)).then(
+      (source) {
+        if (!_disposed && identical(_pending[id], entry)) {
+          _pending.remove(id);
+          if (_fresh(entry) && (_retained?.contains(id) ?? true)) {
+            _ready[id] = entry;
+            while (_ready.length > capacity) {
+              _ready.remove(_ready.keys.first);
+            }
+          }
+        }
+        return source;
+      },
+      onError: (Object error, StackTrace stack) {
+        if (identical(_pending[id], entry)) _pending.remove(id);
+        Error.throwWithStackTrace(error, stack);
+      },
+    );
+    return EpisodeSourceRequest(entry.future, EpisodeSourceOrigin.network);
+  }
+
+  /// Only one speculative request may be in flight. A queued request checks
+  /// the page's lifecycle/selection again before it is allowed to start.
+  /// Speculative failures are silent and evicted so demand can retry normally.
+  Future<void> prefetch(
+    Chapter chapter, {
+    required bool Function() stillWanted,
+  }) async {
+    while (_prefetching != null) {
+      await _prefetching;
+      if (_disposed) return;
+    }
+    if (_disposed || !stillWanted()) return;
+    final request = _request(chapter, prefetch: true);
+    final pending = request.future.then<void>((_) {}, onError: (Object _) {});
+    _prefetching = pending;
+    await pending;
+    if (identical(_prefetching, pending)) _prefetching = null;
+  }
+
+  bool _fresh(_SourceEntry entry) => _now() - entry.started < timeToLive;
+
+  void invalidate(String id) {
+    _ready.remove(id);
+    // A late result from this request cannot replace a refreshed entry.
+    _pending.remove(id);
+  }
+
+  void dispose() {
+    _disposed = true;
+    _ready.clear();
+    _pending.clear();
+    _retained = null;
+  }
+}
+
+class _SourceEntry {
+  final Duration started;
+  final bool prefetched;
+  late final Future<EpisodeSource> future;
+
+  _SourceEntry(this.started, this.prefetched);
+}
+
+Duration Function() _monotonicClock() {
+  final watch = Stopwatch()..start();
+  return () => watch.elapsed;
+}
+
+// Compatibility with older backends without normalized stream metadata.
+String _extractVideoUrl(Map<String, dynamic> payload) {
+  String visit(dynamic value, [int depth = 0]) {
+    if (depth > 7 || value == null) return '';
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.startsWith('http://') ||
+          trimmed.startsWith('https://') ||
+          trimmed.startsWith('/src/')) {
+        return trimmed;
+      }
+      if (trimmed.startsWith('{')) {
+        try {
+          return visit(jsonDecode(trimmed), depth + 1);
+        } catch (_) {
+          return '';
+        }
+      }
+      return '';
+    }
+    if (value is List) {
+      for (final item in value.reversed) {
+        final found = visit(item, depth + 1);
+        if (found.isNotEmpty) return found;
+      }
+      return '';
+    }
+    if (value is Map) {
+      for (final key in ['video_url', 'play_url', 'main_url', 'url']) {
+        final found = visit(value[key], depth + 1);
+        if (found.isNotEmpty) return found;
+      }
+      for (final key in [
+        'data',
+        'video_info',
+        'video_list',
+        'play_info_list',
+        'video_model',
+      ]) {
+        final found = visit(value[key], depth + 1);
+        if (found.isNotEmpty) return found;
+      }
+      for (final nested in value.values) {
+        final found = visit(nested, depth + 1);
+        if (found.isNotEmpty) return found;
+      }
+    }
+    return '';
+  }
+
+  return visit(payload);
+}

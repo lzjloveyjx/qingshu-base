@@ -1,0 +1,43 @@
+# Shell scripts must keep LF endings: a CRLF shebang becomes
+# "#!/usr/bin/env bash\r" and the script fails to execute.
+*.sh text eol=lf
+# Unified diffs preserve blank context lines and a space before Go tabs.
+*.patch text eol=lf whitespace=-blank-at-eol,-space-before-tab
+
+# PowerShell is line-ending agnostic; normalize to CRLF for Windows editors.
+*.ps1 text eol=crlf
+
+# Formatted sources use the same LF endings on every platform.
+*.dart text eol=lf
+*.rs text eol=lf
+*.cjs text eol=lf
+*.mjs text eol=lf
+scripts/**/*.js text eol=lf
+# Other source files keep native endings on checkout.
+*.kts text
+*.kt text
+*.java text
+*.js text
+*.html text
+*.json text
+*.md text
+*.yaml text
+*.yml text
+*.xml text
+
+# Flutter regenerates the plugin registrants with LF. Pin them to LF so a
+# Windows checkout (core.autocrlf=true) keeps the working tree byte-identical
+# to the tool output; otherwise every flutter command leaves them looking
+# modified even though the committed content did not change.
+linux/flutter/generated_* text eol=lf
+windows/flutter/generated_* text eol=lf
+
+# Binary assets: never mangle these.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.webp binary
+*.woff2 binary
+*.jar binary
+*.so binary

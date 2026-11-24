@@ -1,0 +1,334 @@
+part of '../pages/audio_page.dart';
+
+/// 应用睡眠定时档位。
+///
+/// 分钟档沿用原来的「到点暂停」；「听完本章」不挂计时器，只置一个标志，
+/// 由 [_onChapterFinished] 在章末兑现。
+void _applySleepTimerChoice(
+  _AudioPlaybackController c,
+  SleepTimerChoice? choice,
+) {
+  if (c._closed) return;
+  c._sleepTimer?.cancel();
+  c._sleepTimer = null;
+  c._sleepTimerTick?.cancel();
+  c._sleepTimerTick = null;
+
+  final next = choice ?? const SleepTimerChoice.off();
+  final atChapterEnd = next.endOfChapter;
+  if (c._sleepAtChapterEnd != atChapterEnd) {
+    c._sleepAtChapterEnd = atChapterEnd;
+    if (atChapterEnd) c._discardNextAudio();
+    unawaited(AudioPreferences.instance.setSleepAtChapterEnd(atChapterEnd));
+  }
+
+  final minutes = next.minutes;
+  if (minutes == null) {
+    c._update(() => c._sleepRemaining = null);
+    c._publishMoreState();
+    return;
+  }
+
+  c._update(() => c._sleepRemaining = Duration(minutes: minutes));
+  c._publishMoreState();
+  c._sleepTimer = Timer(Duration(minutes: minutes), () {
+    c._sleepTimer = null;
+    c._sleepTimerTick?.cancel();
+    if (c._closed) return;
+    c._update(() {
+      c._sleepRemaining = null;
+      c._wantPlay = false;
+    });
+    c._publishMoreState();
+    final player = c._player;
+    if (player != null && player.isCreated) {
+      unawaited(c._pause(player, c._generation));
+    }
+  });
+  _startSleepTicker(c);
+}
+
+/// 睡眠定时的秒级倒计时刷新。
+void _startSleepTicker(_AudioPlaybackController c) {
+  c._sleepTimerTick?.cancel();
+  c._sleepTimerTick = Timer.periodic(const Duration(seconds: 1), (_) {
+    final remaining = c._sleepRemaining;
+    if (remaining == null || c._closed) return;
+    final next = remaining - const Duration(seconds: 1);
+    c._update(() => c._sleepRemaining = next > Duration.zero ? next : null);
+    c._publishMoreState();
+    if (next <= Duration.zero) c._sleepTimerTick?.cancel();
+  });
+}
+
+bool _hasPendingTrackRecovery(_AudioPlaybackController c) =>
+    c._subtitlesRecoveryPending || c._timeTrackRecoveryPending;
+
+bool _canRecoverTracks(_AudioPlaybackController c) {
+  final player = c._player;
+  return !c._closed &&
+      !c._loading &&
+      c._error == null &&
+      !c._completed &&
+      c._wantPlay &&
+      player != null &&
+      player.playing &&
+      !player.buffering;
+}
+
+/// Stops a queued or in-flight recovery request. Pending stays set so resuming
+/// the same chapter can arm a fresh probe without reopening reader follow.
+void _cancelTrackRecovery(_AudioPlaybackController c) {
+  c._trackRecoveryTimer?.cancel();
+  c._trackRecoveryTimer = null;
+  final cancellation = c._trackRecoveryCancellation;
+  c._trackRecoveryCancellation = null;
+  if (cancellation != null && !cancellation.isCompleted) {
+    cancellation.complete();
+  }
+}
+
+void _resetTrackRecovery(_AudioPlaybackController c) {
+  _cancelTrackRecovery(c);
+  c._subtitlesRecoveryPending = false;
+  c._timeTrackRecoveryPending = false;
+}
+
+/// 初次重试耗尽后只留下一个低频探测机会。既有 timer 或请求在途时不重置
+/// 倒计时，避免 timeline 与 timepoints 完成顺序不同而放大请求频率。
+void _scheduleTrackRecovery(_AudioPlaybackController c) {
+  if (c._closed || !_hasPendingTrackRecovery(c)) {
+    _cancelTrackRecovery(c);
+    return;
+  }
+  if (!_canRecoverTracks(c)) {
+    _cancelTrackRecovery(c);
+    return;
+  }
+  if (c._trackRecoveryTimer != null || c._trackRecoveryCancellation != null) {
+    return;
+  }
+  c._trackRecoveryTimer = Timer(
+    _AudioPlaybackController._trackRecoveryDelay,
+    () {
+      c._trackRecoveryTimer = null;
+      if (!_hasPendingTrackRecovery(c) || !_canRecoverTracks(c)) return;
+      unawaited(_runTrackRecovery(c));
+    },
+  );
+}
+
+Future<void> _runTrackRecovery(_AudioPlaybackController c) async {
+  if (c._trackRecoveryCancellation != null || !_canRecoverTracks(c)) return;
+  final generation = c._generation;
+  final itemId = c._chapters[c._index].itemId;
+  final toneId = c._toneId;
+  final cancellation = Completer<void>();
+  c._trackRecoveryCancellation = cancellation;
+  try {
+    await Future.wait<void>([
+      if (c._subtitlesRecoveryPending)
+        _recoverSubtitlesOnce(c, generation, itemId, toneId, cancellation),
+      if (c._timeTrackRecoveryPending)
+        _recoverTimePointsOnce(c, generation, itemId, toneId, cancellation),
+    ]);
+  } catch (_) {
+    // Recovery is optional; the next eligible playback tick arms another probe.
+  } finally {
+    if (identical(c._trackRecoveryCancellation, cancellation)) {
+      c._trackRecoveryCancellation = null;
+    }
+    if (!cancellation.isCompleted) cancellation.complete();
+  }
+  if (c._current(generation)) _scheduleTrackRecovery(c);
+}
+
+Future<void> _recoverSubtitlesOnce(
+  _AudioPlaybackController c,
+  int generation,
+  String itemId,
+  String toneId,
+  Completer<void> cancellation,
+) async {
+  try {
+    final track = await c._loadSubtitles(
+      itemId,
+      toneId,
+      cancel: cancellation.future,
+    );
+    if (!c._current(generation) || cancellation.isCompleted) return;
+    c._subtitlesRecoveryPending = false;
+    // A successful empty server response is terminal, but it does not erase a
+    // usable local estimate. Only a nonempty server track replaces that
+    // fallback and clears the estimated marker.
+    if (track.isNotEmpty || !c._subtitlesEstimated) {
+      c._subtitles = track;
+      c._subtitlesEstimated = false;
+    }
+    c._publishReadAlong();
+    c._publishListeningSession(playing: c._player?.playing ?? false);
+  } catch (error) {
+    if (!c._current(generation) || cancellation.isCompleted) return;
+    if (!c._isTransientTrackFailure(error)) {
+      c._subtitlesRecoveryPending = false;
+    }
+  }
+}
+
+Future<void> _recoverTimePointsOnce(
+  _AudioPlaybackController c,
+  int generation,
+  String itemId,
+  String toneId,
+  Completer<void> cancellation,
+) async {
+  try {
+    final track = await c._loadTimePoints(
+      itemId,
+      toneId,
+      cancel: cancellation.future,
+    );
+    if (!c._current(generation) || cancellation.isCompleted) return;
+    // Track, readiness and the chapter alias publish from this one snapshot.
+    c._timeTrackRecoveryPending = false;
+    c._timeTrack = track;
+    c._timeTrackReady = true;
+    c._publishReadAlong();
+    c._publishListeningSession(playing: c._player?.playing ?? false);
+  } catch (error) {
+    if (!c._current(generation) || cancellation.isCompleted) return;
+    if (!c._isTransientTrackFailure(error)) {
+      c._timeTrackRecoveryPending = false;
+    }
+  }
+}
+
+/// 章节播完后的分流：听完本章 → 章末连播 → 其它。
+void _onChapterFinished(
+  _AudioPlaybackController c, {
+  required bool shouldAdvance,
+  required NativePlayer player,
+  required int generation,
+}) {
+  // 「听完本章」优先于连播：停在章末并把档位清掉（一次性语义）。
+  if (c._sleepAtChapterEnd) {
+    c._sleepAtChapterEnd = false;
+    unawaited(AudioPreferences.instance.setSleepAtChapterEnd(false));
+    c._publishMoreState();
+    unawaited(c._pause(player, generation));
+    return;
+  }
+  if (shouldAdvance && c._index + 1 < c._chapters.length) {
+    unawaited(c._switchChapter(c._index + 1, expectedGeneration: generation));
+    return;
+  }
+  unawaited(c._pause(player, generation));
+}
+
+/// 章节播完（自然播完或命中片尾跳过）的统一出口。
+///
+/// 放在这里而不是控制器里：控制器文件已顶到行数预算，而这个方法是纯编排，
+/// 不持有任何自己的状态。
+void _handleChapterCompleted(
+  _AudioPlaybackController c,
+  NativePlayer player,
+  int generation,
+) {
+  if (c._closed || c._completed) return;
+  AppLog.d(
+    'audio',
+    'event=completed generation=$generation '
+        'position_ms=${player.position.inMilliseconds} '
+        'duration_ms=${c._duration.inMilliseconds} '
+        'skip_outro=${c._skipOutroFired}',
+  );
+  _cancelTrackRecovery(c);
+  final shouldAdvance = c._wantPlay && c._autoAdvance;
+  c._update(() {
+    c._completed = true;
+    c._wantPlay = false;
+    c._position.value = _AudioPlaybackController._boundedPosition(
+      player.position,
+      c._duration,
+    );
+  });
+  c._publishReadAlong();
+  c._listenTime.stop();
+  c._syncForeground();
+  unawaited(c._persistProgress());
+  // _openChapter resets completion before its source is ready.
+  // The next player's playing event will publish the actual start.
+  c._publishListeningSession(playing: false);
+  // 官方 onPlayCompletion（d.java:92-100）收起播放/同步按钮；阅读页据此
+  // 停止显示，下一章起播时由 update(playing:true) 清掉。
+  ListeningSession.instance.markCompleted();
+  _onChapterFinished(
+    c,
+    shouldAdvance: shouldAdvance,
+    player: player,
+    generation: generation,
+  );
+}
+
+/// 控制器对外的只读查询与跳过配置写入。
+///
+/// 用 extension 而不是往类里加成员：控制器文件已经顶到行数预算，而这些
+/// 都只是对既有私有状态的薄封装。
+extension _AudioPlaybackQueries on _AudioPlaybackController {
+  /// 当前是否停在本轮目录的最后一章。
+  bool get atLastChapter => _index + 1 >= _chapters.length;
+
+  /// 睡眠定时是否停在「听完本章」。
+  bool get sleepAtChapterEnd => _sleepAtChapterEnd;
+
+  /// 当前字幕轨是否由本地估算生成（服务端没有文稿时的兜底）。
+  bool get subtitlesEstimated => _subtitlesEstimated;
+
+  /// 当前这本书的跳过片头/片尾配置。
+  AudioSkipPoints get skipPoints => _skipPoints;
+
+  /// 写入跳过片头/片尾（按书持久化）。
+  Future<void> setSkipPoints(AudioSkipPoints points) async {
+    _skipPoints = points;
+    _skipOutroFired = false;
+    await AudioPreferences.instance.setSkipIntroSeconds(
+      _bookId,
+      points.introSeconds,
+    );
+    await AudioPreferences.instance.setSkipOutroSeconds(
+      _bookId,
+      points.outroSeconds,
+    );
+    _publishMoreState();
+  }
+}
+
+/// 没有服务端文稿时，用章节正文 + 已有时轴反推一条近似字幕轨。
+///
+/// 注入 loader（测试）与离线环境直接跳过：那两种情况下没有正文来源，
+/// 也不该在播放链路上发网络请求。
+Future<SubtitleTrack?> _synthesizeSubtitles(
+  _AudioPlaybackController c,
+  String itemId, {
+  required int generation,
+}) async {
+  if (c.request.sourceLoader != null ||
+      c.request.playerFactory != null ||
+      c._offline) {
+    return null;
+  }
+  final duration = c._duration;
+  if (duration <= Duration.zero) return null;
+  final String text;
+  try {
+    text = await ApiClient.instance.contentText(itemId);
+  } catch (_) {
+    return null;
+  }
+  if (text.trim().isEmpty || !c._current(generation)) return null;
+  return SubtitleSynthesis.buildAsync(
+    text: text,
+    duration: duration,
+    anchors: c._timeTrack,
+  );
+}
