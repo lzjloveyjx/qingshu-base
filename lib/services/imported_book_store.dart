@@ -424,21 +424,65 @@ class ImportedBookStore {
     return true;
   }
 
-  Future<String> chapterText(String bookId, String chapterId) async {
+  /// Resolves the on-disk file for one chapter of an imported book.
+  ///
+  /// Shared by [chapterText] and [writeChapterText] so the progressive
+  /// localizer can fill chapters one by one without rewriting book.json.
+  Future<File> _chapterFile(String bookId, String chapterId) async {
     final record = await _chapterManifests.resolve(bookId, () => book(bookId));
     final index = record.chapters.indexWhere(
       (chapter) => chapter.itemId == chapterId,
     );
     if (index < 0) throw const FileSystemException('找不到本地章节');
     final root = await _root();
-    final file = File(
+    return File(
       [
         root.path,
         bookId,
         record._chapterFiles[index],
       ].join(Platform.pathSeparator),
     );
+  }
+
+  Future<String> chapterText(String bookId, String chapterId) async {
+    final file = await _chapterFile(bookId, chapterId);
     return file.readAsString(encoding: utf8);
+  }
+
+  /// True when a chapter's text file already exists on disk.
+  ///
+  /// Used by the progressive localizer: a chapter that has been fetched in the
+  /// background needs no second network request when the reader reaches it.
+  Future<bool> hasChapterText(String bookId, String chapterId) async {
+    try {
+      final file = await _chapterFile(bookId, chapterId);
+      if (!await file.exists()) return false;
+      // A placeholder written when the skeleton book was created (' ') is not
+      // real content: treat it as not-ready so the reader fetches on demand.
+      final length = await file.length();
+      return length > 4;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Writes one chapter's text into an already-imported book.
+  ///
+  /// The manifest (book.json) is intentionally left untouched: it already
+  /// lists every chapter, so filling the body files in any order is enough.
+  /// A chapter already on disk is skipped so a slow earlier fetch cannot
+  /// overwrite a fresher one; callers that want to force a rewrite can delete
+  /// the file first.
+  Future<void> writeChapterText(
+    String bookId,
+    String chapterId,
+    String text, {
+    bool overwrite = false,
+  }) async {
+    final file = await _chapterFile(bookId, chapterId);
+    if (!overwrite && await file.exists()) return;
+    await file.parent.create(recursive: true);
+    await file.writeAsString(text, encoding: utf8, flush: true);
   }
 
   String _newId() {
