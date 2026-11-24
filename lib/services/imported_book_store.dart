@@ -316,6 +316,64 @@ class ImportedBookStore {
     }
   }
 
+  /// 青枢：把已解析好的章节**原样**写入本地书架。
+  ///
+  /// 与 [importBytes] 的区别：那条路径会按 TXT/EPUB 规则重新切章、重排正文，
+  /// 结构化章节缓存（含插图块）会被当普通文本打散。wenku8 转存需要保留
+  /// 结构化正文，所以这里直接落盘每一章，不再解析。
+  Future<ImportedBook> importParsedChapters({
+    required String title,
+    String author = '',
+    String format = 'txt',
+    required List<ParsedBookChapter> chapters,
+  }) async {
+    if (chapters.isEmpty) {
+      throw const FormatException('没有可导入的章节');
+    }
+    final root = await _root();
+    final id = _newId();
+    final staging = Directory('${root.path}${Platform.pathSeparator}.$id.tmp');
+    final target = Directory('${root.path}${Platform.pathSeparator}$id');
+    await staging.create(recursive: true);
+    try {
+      final stored = <Chapter>[];
+      final files = <String>[];
+      for (var index = 0; index < chapters.length; index++) {
+        final source = chapters[index];
+        final name = 'chapter_${index.toString().padLeft(5, '0')}.txt';
+        await File('${staging.path}${Platform.pathSeparator}$name')
+            .writeAsString(source.text, encoding: utf8, flush: true);
+        files.add(name);
+        stored.add(
+          Chapter(
+            itemId: '$id:chapter:$index',
+            title: source.title,
+            volumeName: '',
+          ),
+        );
+      }
+      final book = ImportedBook._(
+        id: id,
+        title: title,
+        author: author,
+        format: format,
+        addedAt: DateTime.now(),
+        directory: target.path,
+        coverFile: null,
+        chapters: stored,
+        chapterFiles: files,
+      );
+      await File('${staging.path}${Platform.pathSeparator}book.json')
+          .writeAsString(jsonEncode(book._toManifest()), encoding: utf8, flush: true);
+      await staging.rename(target.path);
+      _chapterManifests.remove(id);
+      return book;
+    } catch (_) {
+      if (await staging.exists()) await staging.delete(recursive: true);
+      rethrow;
+    }
+  }
+
   Future<ImportedBook?> book(String id) async {
     if (!RegExp(_bookIdPattern).hasMatch(id)) return null;
     final root = await _root();
