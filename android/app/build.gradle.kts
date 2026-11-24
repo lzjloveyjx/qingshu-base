@@ -106,6 +106,13 @@ android {
                 storeFile = file(keystorePath)
             }
         }
+        // 【青枢】仓库里带一份固定的 release 密钥。
+        //
+        // 上游的设计是「没配密钥就产出未签名包」，那对分发是致命的：
+        // 未签名的 APK 在任何手机上都会报「解析软件包时出现问题 /
+        // packageInfo is null」，根本装不上。这里改成仓库内固定密钥兜底，
+        // CI 和本地都能出可直接安装的包。
+        val bundledKeystore = file("qingshu-release.keystore")
         if (hasReleaseSigning) {
             create("release") {
                 storeFile = rootProject.file(releaseStoreFile!!)
@@ -115,6 +122,15 @@ android {
                 // minSdk is 24, so V2 alone installs on every supported device;
                 // V1 stays enabled because some OEM installers on Android 7
                 // still verify it.
+                enableV1Signing = true
+                enableV2Signing = true
+            }
+        } else if (bundledKeystore.exists()) {
+            create("release") {
+                storeFile = bundledKeystore
+                storePassword = "qingshu2024"
+                keyAlias = "qingshu"
+                keyPassword = "qingshu2024"
                 enableV1Signing = true
                 enableV2Signing = true
             }
@@ -137,9 +153,13 @@ android {
             // keep the debug key so `flutter run` and overwrite-installing a
             // local test build keep working. A package signed by the older test
             // key cannot be overwritten by these -- it must be uninstalled.
-            if (hasReleaseSigning) {
-                signingConfig = signingConfigs.getByName("release")
-            }
+            // 【青枢】只要 signingConfigs 里存在 release 配置就用它。
+            // 上游只在 hasReleaseSigning（CI 注入的密钥）为真时才挂签名，
+            // 否则 release 变体没有任何 signingConfig，产出的是未签名包 ——
+            // 手机上会报「解析软件包时出现问题 / packageInfo is null」。
+            // 现在仓库自带密钥，signingConfigs 里一定有 release，必须挂上。
+            signingConfig = signingConfigs.findByName("release")
+                ?: signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
