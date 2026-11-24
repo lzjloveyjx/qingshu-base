@@ -2,8 +2,9 @@ import 'dart:io';
 import 'dart:async';
 
 import 'package:kazumi/webview/captcha/impl/captcha_webview_inappwebview_impl.dart';
-import 'package:kazumi/webview/captcha/impl/captcha_webview_windows_impl.dart';
-import 'package:kazumi/webview/captcha/impl/captcha_webview_linux_impl.dart';
+// 【青枢】桌面端（Windows/Linux）的验证码 WebView 实现已移除：
+// 本项目只出 Android 包，那两个实现依赖 desktop_webview_window，
+// 而该包只支持桌面平台，在 Android 构建里会编译失败。
 
 abstract class CaptchaWebviewController<T> {
   /// WebView controller.
@@ -92,13 +93,7 @@ abstract class CaptchaWebviewController<T> {
 
 class CaptchaWebviewControllerFactory {
   static CaptchaWebviewController getController() {
-    if (Platform.isWindows) {
-      return CaptchaWebviewWindowsImpl();
-    }
-    if (Platform.isLinux) {
-      return CaptchaWebviewLinuxImpl();
-    }
-    // Android, iOS, macOS
+    // 【青枢】只出 Android 包：桌面实现已移除，直接用 inappwebview。
     return CaptchaWebviewInAppWebviewImpl();
   }
 }
