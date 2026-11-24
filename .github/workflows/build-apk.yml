@@ -70,15 +70,29 @@ jobs:
           # PUB_CACHE 在 CI 上是 /home/runner/.pub-cache，但不要写死：
           # 用 pub cache 实际报告的路径去找，避免 runner 换布局后静默跳过补丁。
           CACHE_DIR="${PUB_CACHE:-$HOME/.pub-cache}"
-          TARGET="$(find "$CACHE_DIR" -path '*flutter_inappwebview_android-*/android/build.gradle' -print -quit)"
-          if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
-            echo "::error::找不到 flutter_inappwebview_android 的 build.gradle（CACHE_DIR=$CACHE_DIR）"
+          # 注意要排除 example/：包里有一份 example/android/build.gradle，
+          # 它同样匹配 *android/build.gradle，find -print -quit 会先命中它，
+          # 于是真正参与构建的那份没被改（上一轮就是这么白跑的）。
+          ROOT="$(find "$CACHE_DIR" -maxdepth 4 -type d -name 'flutter_inappwebview_android-*' -print -quit)"
+          if [ -z "$ROOT" ]; then
+            echo "::error::找不到 flutter_inappwebview_android 包目录（CACHE_DIR=$CACHE_DIR）"
             exit 1
           fi
+          TARGET="$ROOT/android/build.gradle"
+          if [ ! -f "$TARGET" ]; then
+            echo "::error::找不到 $TARGET"
+            exit 1
+          fi
+          echo "package root: $ROOT"
           echo "patched file: $TARGET"
           sed -i "s/proguard-android\.txt/proguard-android-optimize.txt/g" "$TARGET"
           echo "--- 补丁后 ---"
           grep -n "getDefaultProguardFile" "$TARGET" || true
+          # 确认真的没有残留的旧写法，否则直接失败，别让构建跑到一半才报
+          if grep -q "proguard-android\.txt" "$TARGET"; then
+            echo "::error::补丁未生效，仍存在 proguard-android.txt"
+            exit 1
+          fi
 
       - name: Build APK
         run: |
