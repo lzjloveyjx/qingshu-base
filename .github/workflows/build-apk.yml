@@ -59,6 +59,27 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      # flutter_inappwebview_android 1.1.3 的 build.gradle 用了
+      # getDefaultProguardFile('proguard-android.txt')，新版 AGP 直接拒绝评估
+      # 这个项目（"is no longer supported since it includes -dontoptimize"）。
+      # 上游 master 已修成 proguard-android-optimize.txt，但 1.1.3 这个发布版
+      # 没带上。这里在 CI 里就地打补丁：只改这一行，不动包的其他内容。
+      - name: Patch flutter_inappwebview_android proguard file
+        run: |
+          set -euo pipefail
+          # PUB_CACHE 在 CI 上是 /home/runner/.pub-cache，但不要写死：
+          # 用 pub cache 实际报告的路径去找，避免 runner 换布局后静默跳过补丁。
+          CACHE_DIR="${PUB_CACHE:-$HOME/.pub-cache}"
+          TARGET="$(find "$CACHE_DIR" -path '*flutter_inappwebview_android-*/android/build.gradle' -print -quit)"
+          if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
+            echo "::error::找不到 flutter_inappwebview_android 的 build.gradle（CACHE_DIR=$CACHE_DIR）"
+            exit 1
+          fi
+          echo "patched file: $TARGET"
+          sed -i "s/proguard-android\.txt/proguard-android-optimize.txt/g" "$TARGET"
+          echo "--- 补丁后 ---"
+          grep -n "getDefaultProguardFile" "$TARGET" || true
+
       - name: Build APK
         run: |
           flutter build apk --release \
