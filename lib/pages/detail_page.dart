@@ -14,16 +14,17 @@ import '../models/media_description.dart';
 import '../models/series_detail.dart';
 import '../models/shuqi_book.dart';
 import '../services/wenku8/wenku8_source.dart' as wenku8;
+import '../services/wenku8/wenku8_localize.dart';
 import '../services/api_client.dart';
 import '../services/app_theme_style.dart';
 import '../services/audio_history.dart';
 import '../services/book_open_preferences.dart';
 import '../services/catalogue_order_preferences.dart';
 import '../services/chapter_cache_store.dart';
-import '../services/chapter_text_formatter.dart';
 import '../services/chapter_download.dart';
 import '../services/connectivity_status.dart';
 import '../services/system_tts.dart';
+import '../services/imported_book_store.dart';
 import '../services/library_store.dart';
 import '../services/media_history_store.dart';
 import '../services/player_history.dart';
@@ -52,7 +53,6 @@ import '../widgets/home/home_media_card.dart';
 import '../widgets/home/home_shelf.dart';
 import '../widgets/media_card.dart';
 import '../widgets/wenku/wenku_ui.dart';
-import '../widgets/audio/audio_playback_scope.dart';
 import 'audio_page.dart';
 import 'author_page.dart';
 import 'cached_book_reader.dart';
@@ -2020,25 +2020,33 @@ class _DetailPageState extends State<DetailPage> {
   /// audio progress left off.
   Future<void> _openListening() async {
     if (_allChapters.isEmpty || _opening) return;
-    // 青枢：wenku8 条目没有作品音频，听书改用系统朗读（手机 TTS）读正文。
+    // 青枢：wenku8 没有服务端音源。听书的正确做法是「转存成本地书」——
+    // 基座对本地书（localOnly）强制走系统朗读，导入后点听书即能朗读，
+    // 而且顺带能在书架里离线阅读。
     if (wenku8.isWenku8Item(widget.item)) {
       final wGen = ++_openGeneration;
       setState(() => _opening = true);
       try {
-        final load = widget.chapterLoader ?? wenku8.fetchChapterText;
-        final text = await load(_allChapters.first);
+        final imported = await localizeToShelf(widget.item);
+        await ShelfStore.instance.add(imported.toMediaItem());
         if (!mounted || wGen != _openGeneration) return;
-        final book = SystemTtsBook(
-          bookId: _contentId,
-          title: widget.item.title,
-          coverUrl: widget.item.cover,
-          chapters: _allChapters,
-          startIndex: 0,
-          initialContent: ChapterContent.fromPlainText(text),
-          localOnly: true,
-          textLoader: (chapter) async => load(chapter),
+        // 转存完成后直接进阅读页；本地书点听书即系统朗读。
+        await Navigator.push<void>(
+          context,
+          MaterialPageRoute<void>(
+            builder: (_) => ReaderPage(
+              bookId: imported.id,
+              title: imported.title,
+              cover: imported.coverPath ?? '',
+              chapters: imported.chapters,
+              startIndex: 0,
+              localOnly: true,
+              readerStore: widget.readerStore,
+              chapterLoader: (chapter) =>
+                  ImportedBookStore.instance.chapterText(imported.id, chapter.itemId),
+            ),
+          ),
         );
-        await AudioPlaybackScope.startSystemTts(context, book);
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
