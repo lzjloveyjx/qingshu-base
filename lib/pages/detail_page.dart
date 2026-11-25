@@ -14,6 +14,7 @@ import '../models/media_item.dart';
 import '../models/media_description.dart';
 import '../models/series_detail.dart';
 import '../models/shuqi_book.dart';
+import '../services/lightnovel/lightnovel_source.dart' as lightnovel;
 import '../services/wenku8/wenku8_source.dart' as wenku8;
 import '../services/wenku8/wenku8_localize.dart';
 import '../services/wenku8/wenku8_cache_service.dart';
@@ -2642,6 +2643,22 @@ Future<void> openBookDetail(
           bookId: item.id,
           initialTitle: item.title,
           initialCover: item.cover,
+        ),
+      ),
+    );
+    return;
+  }
+  // 青枢：轻之国度条目。目录/正文由 lightnovel 源提供（正文先转结构化再给阅读器）。
+  if (lightnovel.isLightNovelItem(item)) {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => DetailPage(
+          item: item,
+          detailLoader: lightnovel.fetchDetail,
+          directoryLoader: lightnovel.fetchDirectory,
+          chapterLoader: lightnovel.fetchChapterText,
+          autoOpenReader: false,
         ),
       ),
     );

@@ -20,6 +20,8 @@ import '../widgets/mine/classic_mine_summary.dart';
 import '../widgets/mine/classic_mine_top_books.dart';
 import '../widgets/mine/mine_entries.dart';
 import '../widgets/wenku/wenku_ui.dart';
+import '../services/book_source_preference.dart';
+import 'book_source_page.dart';
 import 'detail_page.dart';
 import 'reading_statistics_page.dart';
 import 'settings_page.dart';
@@ -396,6 +398,20 @@ class _MinePageState extends State<MinePage> {
                   SizedBox(height: style.sectionGap),
                   statsEntry,
                   SizedBox(height: style.entryGap),
+                  FeatureEntry(
+                    key: const ValueKey('mine-book-source-desktop'),
+                    title: '书源',
+                    subtitle: '选择去哪里找书（书架与进度不受影响）',
+                    icon: LucideIcons.library_big,
+                    trailingText: BookSourcePreference.instance.source.value.label,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const BookSourcePage(),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: style.entryGap),
                   const MineEntries(),
                 ],
               ),
@@ -446,6 +462,20 @@ class _MinePageState extends State<MinePage> {
                   context,
                   MaterialPageRoute<void>(
                     builder: (_) => const ReadingStatisticsPage(),
+                  ),
+                ),
+              ),
+              SizedBox(height: style.entryGap),
+              FeatureEntry(
+                key: const ValueKey('mine-book-source'),
+                title: '书源',
+                subtitle: '选择去哪里找书（书架与进度不受影响）',
+                icon: LucideIcons.library_big,
+                trailingText: BookSourcePreference.instance.source.value.label,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const BookSourcePage(),
                   ),
                 ),
               ),

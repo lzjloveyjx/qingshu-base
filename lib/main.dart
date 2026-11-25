@@ -43,6 +43,7 @@ import 'services/audio_download_store.dart';
 import 'services/audio_floating_routes.dart';
 import 'services/drama_cache_preferences.dart';
 import 'services/audio_preferences.dart';
+import 'services/book_source_preference.dart';
 import 'services/drama_feature_preferences.dart';
 import 'services/player_panel_preferences.dart';
 import 'services/player_preferences.dart';
@@ -264,6 +265,7 @@ Future<void> _loadLocalData() async {
     themeStyleFuture,
   ]);
   unawaited(optional(AudioPreferences.instance.load));
+  unawaited(optional(BookSourcePreference.instance.load));
   unawaited(optional(DramaFeaturePreferences.instance.load));
   // 多端同步的网络或安全存储故障不阻塞本机阅读。旧 WebDAV 配置由统一服务只读接管，绝不在这里启动云端覆盖流程。
   unawaited(
