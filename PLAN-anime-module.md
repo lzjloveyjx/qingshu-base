@@ -1,6 +1,6 @@
 # 动漫模块合并规划（Kazumi → 青枢）
 
-> 状态：**已定稿，开始实施**（2026-11-25 决策完毕）
+> 状态：**第 1 期已交付并发布**（v1.6.0，2026-11-25）；第 2–4 期待做
 > 编写日期：2026-11-25
 > 目标读者：本人（决策）+ 后续实现会话
 
@@ -103,6 +103,10 @@ static PluginManager? _pluginManager;  // 视频源规则
 ### 第 1 期：能看见（数据层打通）
 **工作量：小 / 风险：低**
 
+> **状态：已完成**（v1.6.0，commit `921f1f6`）。
+> 实际落地：`anime_source.dart` / `anime_page.dart` / `anime_detail_page.dart`；
+> 镜像 `api.kazumi.fyi`；封面 wsrv.nl 代理；底栏第 2 项固定「动漫」。
+
 - 新增 lib/services/anime/anime_source.dart
   - browsePopular() → Bangumi 排行榜
   - browseCalendar() → 每日放送表
@@ -202,6 +206,21 @@ Kazumi 本身就有 `BangumiAcceleration`（direct / ech / mirror）三档，默
 ### 9.3 封面图床
 
 封面域名 `lain.bgm.tv` / `api.bgm.tv` 的图片同样可能不通，需要走镜像或在设置里暴露图床代理开关。这一项要在第 1 期实测确认。
+
+**第 1 期结论**：已按 Kazumi 的做法套 `wsrv.nl` 图片代理（`anime_source.dart` 的 `_cover()`），实测返回真实图片。设备上若仍不显示，退路是在设置里加图床代理开关。
+
+### 9.4 第 1 期实现补充
+
+- 榜单接口 `/kazumi/v1/popular/subjects` 每行是**直接一个 subject**（不是 `{subject: {...}}` 包一层，season 接口才是包一层），代码里两种都认。
+- 中文名字段是 `nameCN`（大写 CN），不是 `nameCn`；`/p1/subjects/{id}` 与榜单同形。
+- `HomeMediaCard` **没有** `cacheWidth` 参数（只有 `StoryCover` 有），传了会编译失败。
+- 底栏「动漫」不再跟 `DramaFeaturePreferences` 联动：关掉短剧后动画入口仍然在。
+
+### 9.5 已知遗留
+
+- 动漫详情页**还没有剧集列表**，这是第 2 期的事（要装播放内核）。
+- `HomeKindIcon` / `homeKindLabel` 已加 `anime`，但书架分区（小说 / 动漫）还没做。
+- 「我的」里的播放源管理入口还没加。
 
 ---
 
