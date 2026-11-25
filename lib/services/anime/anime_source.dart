@@ -158,6 +158,84 @@ Future<List<List<MediaItem>>> browseSeason({DateTime? at}) async {
   return out;
 }
 
+/// 一集番剧（Bangumi episode）。
+class AnimeEpisode {
+  const AnimeEpisode({
+    required this.id,
+    required this.sort,
+    required this.name,
+    this.nameCn = '',
+    this.airdate = '',
+    this.ep = 0,
+  });
+
+  final int id;
+
+  /// 站内排序号：正片是 1..N，SP/OP 之类是小数。
+  final double sort;
+  final String name;
+  final String nameCn;
+  final String airdate;
+  final int ep;
+
+  String get display => nameCn.isNotEmpty
+      ? nameCn
+      : (name.isNotEmpty ? name : '第 ' + sort.toString() + ' 话');
+}
+
+/// 拉整部番的剧集表。
+///
+/// 官方 api.bgm.tv 在国内直连不通，但**镜像直接代理了同一个 v0 路径**
+/// （实测 api.kazumi.fyi/v0/episodes?subject_id=... 返回 200），所以这里不需要
+/// Kazumi 那套 BangumiAcceleration 加速层，直接拼镜像域名即可。
+///
+/// [type] 0=正片，1=SP，2=OP，3=ED。
+Future<List<AnimeEpisode>> fetchEpisodes(int subjectId, {int type = 0}) async {
+  if (subjectId == 0) return const [];
+  const limit = 100;
+  final out = <AnimeEpisode>[];
+  var offset = 0;
+  int? total;
+  while (true) {
+    final data = await _getJson(
+      _kMirror +
+          '/v0/episodes?subject_id=' +
+          subjectId.toString() +
+          '&type=' +
+          type.toString() +
+          '&limit=' +
+          limit.toString() +
+          '&offset=' +
+          offset.toString(),
+    );
+    if (data is! Map) break;
+    total ??= data['total'] is num ? (data['total'] as num).toInt() : null;
+    final rows = data['data'];
+    if (rows is! List || rows.isEmpty) break;
+    for (final row in rows) {
+      if (row is! Map) continue;
+      final id = row['id'];
+      if (id is! int) continue;
+      final sort = row['sort'];
+      out.add(
+        AnimeEpisode(
+          id: id,
+          sort: sort is num ? sort.toDouble() : 0,
+          name: (row['name'] ?? '').toString().trim(),
+          nameCn: (row['name_cn'] ?? '').toString().trim(),
+          airdate: (row['airdate'] ?? '').toString().trim(),
+          ep: row['ep'] is num ? (row['ep'] as num).toInt() : 0,
+        ),
+      );
+    }
+    offset += rows.length;
+    if (total != null && offset >= total) break;
+    if (rows.length < limit) break;
+  }
+  out.sort((a, b) => a.sort.compareTo(b.sort));
+  return out;
+}
+
 /// 番剧详情（结构化），给详情页直接用。
 class AnimeDetail {
   const AnimeDetail({

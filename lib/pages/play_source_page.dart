@@ -389,7 +389,7 @@ class _InstalledTile extends StatelessWidget {
             IconButton(
               tooltip: '移除',
               onPressed: onRemove,
-              icon: Icon(LucideIcons.trash_2, size: 18, color: palette.muted),
+              icon: Icon(LucideIcons.trash, size: 18, color: palette.muted),
             ),
         ],
       ),
