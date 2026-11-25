@@ -33,5 +33,11 @@ jobs:
       - name: Pub get
         run: flutter pub get
 
+      # 注意别写成 `flutter test ... | tail -300`：管道把退出码换成了 tail 的，
+      # 测试失败也会显示 success（2026-11-26 踩过一次，白跑一轮）。
+      # 用 PIPESTATUS 取回 flutter 自己的退出码。
       - name: Run plugin view test
-        run: flutter test test/widget/plugin_view_page_test.dart -r expanded 2>&1 | tail -300
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test test/widget/plugin_view_page_test.dart -r expanded 2>&1 | tail -300
