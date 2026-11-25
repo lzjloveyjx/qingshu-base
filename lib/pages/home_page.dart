@@ -366,7 +366,8 @@ class _HomePageState extends ConsumerState<HomePage> {
   /// 2026-10-24 用户决定回退服务端 11 项方案——服务端表没有「短剧/漫剧」，
   /// 跨媒介入口只能本地给；点击身份由 `homeProvider` 的 `usesLocalTabs`
   /// 本地表驱动，与这里的下标一一对应。
-  List<HomeCategory> _categoriesOf(HomeState state) => homeCategories;
+  List<HomeCategory> _categoriesOf(HomeState state) =>
+      kWenku8HomeTabs.map(HomeCategory.new).toList(growable: false);
 
   @override
   Widget build(BuildContext context) {

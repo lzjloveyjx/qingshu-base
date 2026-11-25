@@ -76,7 +76,8 @@ Future<List<MediaItem>> searchLocal(String keyword) async {
     final p = await _plugin();
     final idx = await _index(p);
     if (idx == null) return const [];
-    return idx.search(q, p).map(_item).toList(growable: false);
+    // 题材 tab 会命中上千本，上限放宽到全量（网格懒构建，不会卡）。
+    return idx.search(q, p, limit: 5000).map(_item).toList(growable: false);
   } catch (e) {
     debugPrint('wenku8 searchLocal failed: $e');
     return const [];

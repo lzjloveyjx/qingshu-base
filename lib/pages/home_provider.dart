@@ -346,13 +346,14 @@ class HomeNotifier extends Notifier<HomeState> {
         tabType: type <= 1 ? null : type,
       );
     }
-    final name = tabIndex >= 0 && tabIndex < tabs.length
-        ? tabs[tabIndex]
-        : tabs.first;
+    final name = tabIndex >= 0 && tabIndex < localTabs.length
+        ? localTabs[tabIndex]
+        : localTabs.first;
     return (
       name: name,
-      kind: tabKinds[name] ?? 'book',
-      tabType: tabTypes[name],
+      kind: kWenku8TagTabs.contains(name) ? 'book' : (tabKinds[name] ?? 'book'),
+      // 题材 tab 没有 tab_type，只能走搜索兜底（题材名当关键词）。
+      tabType: kWenku8TagTabs.contains(name) ? null : tabTypes[name],
     );
   }
 
@@ -409,6 +410,10 @@ class HomeNotifier extends Notifier<HomeState> {
   /// 固定走本地表，不能靠 `state.tabs` 空不空来猜。
   final bool usesLocalTabs;
 
+  /// 实例级顶栏表。缺省用静态 [tabs]；首页注入 wenku8 题材表后，
+  /// identityOf / selectTab 都以它为准，底部短剧页仍用静态表不受影响。
+  final List<String> localTabs;
+
   /// Whether this feed has a playable video surface that reports the visible
   /// card through [noteCurrentVid]. A `video` kind alone is not enough: only
   /// `tab_type=16` plays inline; the 8/4 video categories render grids.
@@ -429,7 +434,9 @@ class HomeNotifier extends Notifier<HomeState> {
     this.initialTabIndex = 0,
     this.usesLocalTabs = false,
     this.resumeVideoFeed = false,
-  }) : _feedCache = feedCache ?? HomeFeedCache.instance,
+    List<String>? tabs,
+  }) : localTabs = tabs ?? HomeNotifier.tabs,
+       _feedCache = feedCache ?? HomeFeedCache.instance,
        // 注入的 loader 只认 `tabType`；生产路径要额外带上顶栏下标，所以
        // 缺省时直接用带下标的那个（见 [HomepageLoaderWithIndex]）；注入的
        // 测试加载器只认 `tabType`，这里补一层适配，多余的下标参数丢弃。
@@ -675,7 +682,7 @@ class HomeNotifier extends Notifier<HomeState> {
     // 表时是本地表的长度。用错口径会把短剧页的「短剧」（本地下标 2）拦掉或
     // 放进越界下标。
     final limit = usesLocalTabs || state.tabs.isEmpty
-        ? tabs.length
+        ? localTabs.length
         : state.tabs.length;
     if (index == state.tabIndex || index < 0 || index >= limit) return;
     // 记住切换前的位置：下一次加载要把它当 `last_tab_index` 交给上游，
@@ -1544,6 +1551,7 @@ final homeProvider = NotifierProvider<HomeNotifier, HomeState>(
   // 书城网格 / 卡片 / 搜索全走框架自己的皮，wenku8 只提供数据。
   () => HomeNotifier(
     usesLocalTabs: true,
+    tabs: kWenku8HomeTabs,
     indexedHomepageLoader: wenku8HomepageLoader,
     searchLoader: wenku8HomeSearchTabs,
     // 听书/漫画/漫剧当前没有可用数据源（番茄后端已移除）。
