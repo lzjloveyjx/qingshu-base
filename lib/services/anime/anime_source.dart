@@ -226,7 +226,10 @@ Future<AnimeDetail?> fetchSubjectDetail(int id) async {
 }
 
 /// 番剧详情（镜像 /p1/subjects/{id}）。
-Future<Map<String, dynamic>> fetchDetail(String itemId) async {
+Future<Map<String, dynamic>> fetchDetail(
+  String itemId, {
+  String tab = '小说',
+}) async {
   final id = animeIdOf(itemId);
   if (id == 0) return {'source': kAnimeSource};
   final data = await _getJson(_kMirror + '/p1/subjects/' + id.toString());

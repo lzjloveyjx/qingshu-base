@@ -33,6 +33,7 @@ import 'services/frame_stats.dart';
 import 'services/shell_visibility.dart';
 import 'services/app_theme.dart';
 import 'services/app_theme_style.dart';
+import 'services/appearance_prewarm.dart';
 import 'services/app_style_tokens.dart';
 import 'services/api_client.dart';
 import 'services/sync/multi_device_sync_service.dart';
@@ -54,6 +55,7 @@ import 'services/drama_channel_preferences.dart';
 import 'services/drama_download_store.dart';
 import 'services/drama_downloader.dart';
 import 'services/fair_memory.dart';
+import 'services/connectivity_status.dart';
 import 'services/home_feed_cache.dart';
 import 'services/haptic_preferences.dart';
 import 'services/library_store.dart';
@@ -961,7 +963,8 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
         },
       );
     }
-    AudioFloatingRouteScope.configure(context, hidden: _index == 1);
+    // 动漫页是列表页，不占音频悬浮条；只有原来的全屏视频流页才需要隐藏。
+    AudioFloatingRouteScope.configure(context, hidden: false);
     final palette = HomePalette.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     // 青枢：第 2 个 tab 已换成动漫页（浅色列表页），壳层不再有「全屏视频流」
