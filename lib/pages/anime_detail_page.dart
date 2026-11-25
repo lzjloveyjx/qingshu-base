@@ -10,6 +10,7 @@ import 'package:flutter_lucide/flutter_lucide.dart';
 import '../models/media_item.dart';
 import '../services/anime/anime_source.dart';
 import '../widgets/home/home_design.dart';
+import '../widgets/home/home_media_card.dart';
 import '../widgets/home/home_shelf.dart';
 
 class AnimeDetailPage extends StatefulWidget {
@@ -103,14 +104,12 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
               child: SizedBox(
                 width: 108,
                 height: 150,
-                child: d.cover.isEmpty
-                    ? Container(color: palette.soft)
-                    : Image.network(
-                        d.cover,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                            Container(color: palette.soft),
-                      ),
+                // 用首页那张封面组件：它已经接了 CachedNetworkImage + 失败
+                // 兜底，也带了图床需要的 UA 头，别在这里另起一套加载方式。
+                child: StoryCover(
+                  item: _detailItem(widget.item, d),
+                  cacheWidth: 320,
+                ),
               ),
             ),
             const SizedBox(width: 14),
@@ -202,6 +201,12 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
         ),
       ],
     );
+  }
+
+  /// 封面用详情返回的那张（榜单条目可能没有封面），其余字段沿用列表项。
+  MediaItem _detailItem(MediaItem base, AnimeDetail detail) {
+    if (detail.cover.isEmpty || detail.cover == base.cover) return base;
+    return base.copyWith(cover: detail.cover);
   }
 
   Widget _chip(HomePalette palette, String text) {
