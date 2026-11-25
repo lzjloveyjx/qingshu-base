@@ -1,6 +1,6 @@
 # 动漫模块合并规划（Kazumi → 青枢）
 
-> 状态：**第 3 期已交付并发布**（v1.9.0，2026-11-25）；剩细节打磨（弹幕/进度记忆等）
+> 状态：**第 3 期已交付**（v1.9.0）；细节打磨进行中（源管理/选源/播放功能已改，见第十节）
 > 编写日期：2026-11-25
 > 目标读者：本人（决策）+ 后续实现会话
 
@@ -311,6 +311,55 @@ Kazumi 本身就有 `BangumiAcceleration`（direct / ech / mirror）三档，默
   次要问题，不影响分区；要修就在这两个函数加 score 的存取。
 - 播放体验：弹幕、播放进度记忆还没接（Kazumi 里有实现，可迁）。
 - 用户实测 v1.8.0「大体没问题，细节需要处理」——具体细节等用户逐条提。
+### 2026-11-26 05:40 更新：细节打磨第一轮（源管理 / 选源 / 播放功能）
+
+用户实测 v1.9.0 后提了三条，都要「学 Kazumi 原版的界面/节奏」：
+
+**① 源管理界面换成 Kazumi 原版**（commit `3056562`）
+  关键发现：Kazumi 那 6 个源管理界面文件（plugin_view_page / plugin_shop_page /
+  plugin_catalog_view / rule_card / rule_management_widgets / plugin_editor_page）
+  **与原始库 Predidit/Kazumi 逐字节一致**，早就在 packages/kazumi 里了。
+  之前是我们自己写的简易一页式 UI（play_source_page）把它挡住了。
+  - PlaySourcePage 改成委托 PluginViewPage（已安装规则：搜索/筛选/批量删/拖拽排序/三点菜单/单条更新）
+  - Kazumi 里 7 处 flutter_modular 的 context.pushNamed 改为 Navigator.push
+    （主壳是 Riverpod，没有 ModularApp，原跳转全失效）；plugin_editor_page 的
+    context.pop() 同样改成 Navigator.of(context).pop()
+  - controller 用 KazumiBootstrap.plugins 传下去，inject 点需改 0 个
+
+**② 选源流程学 Kazumi**（commit `bbba2f2`）
+  - 新增 pages/source_picker_sheet.dart：点剧集先弹面板，并发搜全部规则，
+    按源分组展示，五态（pending/success/noResult/error/captcha），用户选一条。
+  - 只复用底层 plugin.queryBangumi / queryChapterRoads，不碰 SourceSheet/InfoController
+  - 播放页入参改为 PickedSource，删掉「自动搜所有源 + 自动选第一个」
+    （这正是用户说的节奏不对的根源）
+
+**③ 播放页功能补齐**（commit `bbba2f2`）
+  按成本排序，本轮做了 6 项零依赖的：倍速 / 画幅 / 跳过片头(+90s) / 定时关闭 /
+  锁屏 / 播放信息 HUD（时长+分辨率+倍速，分辨率走 player.stream.width/height）。
+
+### 编译踩的坑（都修在 fd8390b / cdf65d8）
+
+- source_picker_sheet.dart 用了 MediaItem 却没 import models/media_item.dart
+  （anime_source 的 import 不传递）
+- Icons.skip_forward 不存在 -> Icons.fast_forward
+- ActionChip.color 参数类型是 WidgetStateProperty -> 去掉该参数
+- context.pop() 是 flutter_modular 扩展，删 import 后失效 -> Navigator.of(context).pop()
+- int.clamp(0, -1) 在分集为空时抛 ArgumentError（cdf65d8 修）
+
+### 还没做（用户后续要逐条提）
+
+- **弹幕**：Kazumi 用 canvas_danmaku + DanDanPlay API（api.dandanplay.net）。
+  实测直连 403（Kazumi 的 DanmakuClient 有专门鉴权），需先解决接口鉴权。
+  canvas_danmaku 只在 kazumi 子包声明，主工程要加依赖。
+- 超分辨率 / 同步播放 / PiP / 截图 / 亮度音量竖滑手势：
+  这些要搬 Kazumi 的 PlayerController 整套（mobx + modular），成本高，暂缓。
+- 播放进度记忆（Kazumi 的 playResume / historyOffset）
+
+### 调研材料位置
+
+原始 Kazumi 关键源码已下载到 D:/小肥鱼工作区/07-影音App/qingshu-apk/upstream-kazumi/
+（文件名把 / 换成 __，如 lib__pages__plugin_editor__plugin_view_page.dart），
+共 15 个文件，是 Predidit/Kazumi main 分支快照，可随时对照。
 ### 重新开工第一件事
 
 看 `bbc9b4d` 的 Build APK 结果（workflow `build-apk.yml`）。
