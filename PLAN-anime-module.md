@@ -1,6 +1,6 @@
 # 动漫模块合并规划（Kazumi → 青枢）
 
-> 状态：**第 1 期已交付并发布**（v1.6.0，2026-11-25）；第 2–4 期待做
+> 状态：**第 2 期已交付并发布**（v1.8.0，2026-11-25）；书架分区（第 3 期）待做
 > 编写日期：2026-11-25
 > 目标读者：本人（决策）+ 后续实现会话
 
@@ -259,6 +259,36 @@ Kazumi 本身就有 `BangumiAcceleration`（direct / ech / mirror）三档，默
  2. `Future.wait<Object>` 装不下 `Future<AnimeDetail?>` → 改 `Future.wait<Object?>`。
  3. 注意：concurrency 会把旧 run 取消，文档提交也会触发（build-apk 的 paths 不含 docs，
     但 push 事件本身仍触发 workflow，只是新 run 顶掉旧的）。
+### 2026-11-25 19:05 更新：第 2 期完成，v1.8.0 已发布
+
+- 构建 `058c484`：run `45594970369` → **success**。
+- APK：https://github.com/lzjloveyjx/qingshu-apk/releases/tag/v1.8.0
+- 文件 `qingshu-merge-v1.8.0.apk`，100,636,060 字节，
+  sha256 `1742e5e407e102633f11c91bd335550cfff6941eae7024efecf4289c6bbf7809`。
+- 下载 gh-proxy 返回 200，首字节 `504b0304`；解包确认 arm64 `libmpv.so` 12.4MB。
+
+第 2 期最终交付：
+1. **播放源管理页**（`pages/play_source_page.dart`）：装/更新/删规则、改仓库地址。
+   经典主题入口在 `widgets/mine/classic_mine_entries.dart`（书源旁，showTools 之外）。
+2. **精简播放页**（`pages/anime_player_page.dart`）：自己写的，没搬 Kazumi 581 行原皮。
+   链路 = 规则搜索 → queryChapterRoads → WebView 解析真实地址 → media_kit 播放；
+   带选集、换源、解析状态与错误重试。点详情页剧集方块进入。
+3. **Android MediaKit 初始化**（main.dart）：装了 libmpv 后必须补。
+
+编译踩坑（这几轮逐个修的，别再犯）：
+- `LucideIcons.trash_2` 不存在 → 用 `trash`，别拿自己刚写的文件当图标白名单。
+- `Future.wait<Object>` 装不下 `Future<AnimeDetail?>` → 用 `Future.wait<Object?>`。
+- setState 块里赋值用逗号结尾 → 必须分号（我犯过）。
+- `int.clamp` 静态返回 `num` → 赋给 int 前要 `.toInt()`。
+- `VideoController` 没有 `dispose()` → 只 dispose Player。
+- main.dart 里 `media_kit` 直接 import 会带进同名 `NativePlayer` 与本地冲突 → `as mediakit`。
+- main.dart 的 `foundation.dart` 只 show 了 LicenseRegistry → 用 `dart:io` 的 `Platform.isAndroid`。
+- 播放页漏 import `models/media_item.dart`（anime_source 的 import 不传递）。
+
+下载坑：artifact 的 blob 直连（productionresultssa16）只有 ~20KB/s，
+走 `https://gh-proxy.org/<blob-url>` ~322KB/s。artifact zip 50MB，解出的 APK 100MB，别搞混。
+
+下一步（第 3 期）：书架小说/动漫分区。播放体验可再补弹幕/进度记忆（迁移自 Kazumi）。
 ### 重新开工第一件事
 
 看 `bbc9b4d` 的 Build APK 结果（workflow `build-apk.yml`）。
