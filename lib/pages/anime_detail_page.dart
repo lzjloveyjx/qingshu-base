@@ -40,7 +40,7 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
       _error = null;
     });
     final id = animeIdOf(widget.item.id);
-    final results = await Future.wait<Object>([
+    final results = await Future.wait<Object?>([
       fetchSubjectDetail(id),
       fetchEpisodes(id),
     ]);
