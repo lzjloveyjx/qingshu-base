@@ -11,7 +11,7 @@ import 'package:kazumi/plugins/plugins.dart';
 /// 再去站点取目录和正文 —— 能搜到全站每一本，且不需要账号。
 ///
 /// 索引格式（压缩过，字段名只留一个字母，省 1/3 体积）：
-///   [{"a": 书 id, "n": 书名, "u": 作者, "c": 封面}]
+///   [{"a": 书 id, "n": 书名, "u": 作者, "c": 封面, "t": "题材 题材"}]
 class NovelLocalIndex {
   NovelLocalIndex._(this._entries);
 
@@ -35,6 +35,7 @@ class NovelLocalIndex {
           name: name,
           author: (item['u'] as String? ?? '').trim(),
           cover: (item['c'] as String? ?? '').trim(),
+          tags: (item['t'] as String? ?? '').trim(),
         ));
       }
       return NovelLocalIndex._(entries);
@@ -58,6 +59,9 @@ class NovelLocalIndex {
       if (e.name.toLowerCase().contains(k)) {
         byName.add(_toItem(e, plugin));
       } else if (e.author.isNotEmpty && e.author.toLowerCase().contains(k)) {
+        byAuthor.add(_toItem(e, plugin));
+      } else if (e.tags.isNotEmpty && e.tags.split(' ').any((t) => t == k)) {
+        // 题材精确匹配：顶栏题材 tab 用题材名搜索，命中该题材全部书。
         byAuthor.add(_toItem(e, plugin));
       }
       if (byName.length >= limit) break;
@@ -96,10 +100,12 @@ class _IndexEntry {
     required this.name,
     required this.author,
     required this.cover,
+    this.tags = '',
   });
 
   final String aid;
   final String name;
   final String author;
   final String cover;
+  final String tags;
 }

@@ -25,6 +25,6 @@
   "antiCrawlerConfig": {
     "enabled": false
   },
-  "novelIndexAsset": "assets/rules/novel/wenku8_index.json",
+  "novelIndexAsset": "assets/rules/novel/wenku8_index_tagged.json",
   "catalogTemplate": "/novel/{cat}/{aid}/index.htm"
 }
