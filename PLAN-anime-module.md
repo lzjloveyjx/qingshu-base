@@ -241,6 +241,24 @@ Kazumi 本身就有 `BangumiAcceleration`（direct / ech / mirror）三档，默
 2. **镜像直接代理 v0 路径。** `api.kazumi.fyi/v0/episodes?subject_id=…` 返回 200，
    `total` 与字段和官方一致，不需要 Kazumi 的 `BangumiAcceleration` 三层加速。
 
+### 2026-11-25 17:55 更新：v1.7.0 已发布
+
+- 构建 `989a195`：run `45585739782` → **success**。
+- APK 已发布：https://github.com/lzjloveyjx/qingshu-apk/releases/tag/v1.7.0
+- 文件 `qingshu-merge-v1.7.0.apk`，99,915,160 字节，
+  sha256 `d939b4052099180fa024eaeb7b7cd0c1299b3e500e7458d9743d4b427e504c76`。
+- 解包验证：arm64 `libmpv.so` 12,369,680 字节，确实进包了。
+- 下载链接 gh-proxy 返回 200，首字节 `504b0304`。
+
+ downloads 的坑：GitHub artifact 的 blob 直连（productionresultssa16）只有 ~20KB/s，
+ 走 `https://gh-proxy.org/<blob-url>` 能到 ~322KB/s，50MB 约 2.5 分钟。
+ artifact zip 是压缩的（50MB），解出来的 APK 是 99.9MB —— 两个数字别搞混。
+
+ 编译错误复盘（三次）：
+ 1. `LucideIcons.trash_2` 不存在 → 改 `trash`。
+ 2. `Future.wait<Object>` 装不下 `Future<AnimeDetail?>` → 改 `Future.wait<Object?>`。
+ 3. 注意：concurrency 会把旧 run 取消，文档提交也会触发（build-apk 的 paths 不含 docs，
+    但 push 事件本身仍触发 workflow，只是新 run 顶掉旧的）。
 ### 重新开工第一件事
 
 看 `bbc9b4d` 的 Build APK 结果（workflow `build-apk.yml`）。
