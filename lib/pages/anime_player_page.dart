@@ -10,17 +10,16 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_lucide/flutter_lucide.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:kazumi/kazumi_bootstrap.dart';
-import 'package:kazumi/modules/search/plugin_search_module.dart';
 import 'package:kazumi/modules/roads/road_module.dart';
 import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/services/video_source/video_source_service.dart';
 import 'package:kazumi/services/video_source/webview_video_source_service.dart';
 
+import '../models/media_item.dart';
 import '../widgets/home/home_design.dart';
 import '../services/anime/anime_source.dart';
 
@@ -56,7 +55,6 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
   late final Player _player;
   late final VideoController _videoController;
   WebViewVideoSourceService? _resolver;
-  PluginsController? _plugins;
 
   bool _resolving = true;
   String? _error;
@@ -70,7 +68,7 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
       _roads.isEmpty ? const [] : (_roads[_roadIndex].data);
   int _episodeIndex = 0;
   String _status = '正在搜索播放源…';
-  StreamSubscription<Object>? _errorSub;
+  StreamSubscription<String>? _errorSub;
 
   @override
   void initState() {
@@ -87,7 +85,7 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
   void dispose() {
     _errorSub?.cancel();
     _resolver?.dispose();
-    _videoController.dispose();
+    // VideoController 没有 dispose(); media_kit 里它是随 Player 一起释放的。
     _player.dispose();
     super.dispose();
   }
@@ -101,7 +99,6 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
     try {
       await KazumiBootstrap.ensureReady();
       final plugins = KazumiBootstrap.plugins;
-      _plugins = plugins;
       final keyword = widget.item.title;
       // 逐个规则搜索，收集有结果的源。
       final found = <Plugin>[];
