@@ -14,6 +14,7 @@ import '../widgets/home/home_design.dart';
 import '../widgets/home/home_media_card.dart';
 import '../widgets/home/home_shelf.dart';
 import 'anime_player_page.dart';
+import 'source_picker_sheet.dart';
 
 class AnimeDetailPage extends StatefulWidget {
   const AnimeDetailPage({super.key, required this.item});
@@ -262,16 +263,25 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
     return base.copyWith(cover: detail.cover);
   }
 
-  /// 一集一个方块。点开精简播放页，按集数定位。
+  /// 一集一个方块。点开先弹选源面板，用户选好源后再进播放页。
   Widget _episodeChip(HomePalette palette, AnimeEpisode episode) {
     final episodeNumber = episode.sort.round();
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () => openAnimePlayer(
-        context,
-        item: widget.item,
-        episode: episodeNumber < 1 ? 1 : episodeNumber,
-      ),
+      onTap: () async {
+        final picked = await showSourcePicker(
+          context,
+          anime: widget.item,
+          episode: episodeNumber < 1 ? 1 : episodeNumber,
+        );
+        if (picked == null || !context.mounted) return;
+        await openAnimePlayer(
+          context,
+          item: widget.item,
+          episode: episodeNumber < 1 ? 1 : episodeNumber,
+          picked: picked,
+        );
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
