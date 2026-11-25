@@ -406,6 +406,68 @@ Kazumi 本身就有 `BangumiAcceleration`（direct / ech / mirror）三档，默
 - `HomeMediaCard` **没有** `cacheWidth` 参数（`StoryCover` 才有）。
 - `pubspec.yaml` 是**混用 CRLF/LF**，`edit_file` 匹配 `\n` 会失败，要用 `\r\n`。
 
+## 十一、灰块真根因（2026-11-26，v2.1.0 实测复现后重查）
+
+**上一轮的结论是错的**：把灰块归因到空态里的 `SingleChildScrollView` 和
+`SysAppBar` 的 `context.maybePop()`。两处都确实该修（前者在 sliver 里必崩，
+后者是 modular 扩展），但修完 v2.1.0 用户实测**仍是整页灰块**。
+
+### 真根因：两套 Material 实现混用
+
+| | 用的什么 | 数量 |
+|---|---|---|
+| 主壳 `lib/` | `package:material_ui/material_ui.dart` | 295 个文件 |
+| `packages/kazumi` | `package:flutter/material.dart` | **172 个文件** |
+
+Flutter 3.47 起，`package:flutter/material.dart` 被拆成独立包 `material_ui`
+（SDK 里那份已标 `@Deprecated`，见 `flutter/lib/material.dart:17-21`）。
+两者**各有一份 `Theme` / `MaterialLocalizations` / `DefaultMaterialLocalizations`**，
+InheritedWidget 类型不同，互相认不出来。
+
+后果（与用户截图逐点吻合）：
+
+1. `Theme.of(context)` 找不到主壳的 `Theme` → 回退 Flutter 默认紫。
+   截图里「我的规则」卡片正是 `#EADDFF / #6750A4` —— 这就是默认 Material 紫，
+   而不是青枢品牌色 `#EF5038`。
+2. `MaterialLocalizations.of(context)` 找不到 → `TextField` 在 build 里抛
+   `No MaterialLocalizations found`（`text_field.dart:1531` 的
+   `debugCheckHasMaterialLocalizations`）。
+3. release 构建的 `ErrorWidget` 把出错的子树画成纯灰块（`RenderErrorBox`，
+   背景 `Color(0xF0C0C0C0)`），正好盖住整页列表区 —— 就是截图里那块灰。
+
+### 复现与验证（本机）
+
+本机装了 Flutter 3.50.1（`D:/flt-sdk/flutter`，注意 APPDATA/TEMP 要重定向，
+否则 flutter 工具写 `%APPDATA%\.flutter_tool_state` 被拒；SDK 路径不能含中文，
+否则 impellerc 编 shader 会因路径乱码失败）。
+
+| 实验 | 结果 |
+|---|---|
+| probe5：material_ui 的 MaterialApp 里放 flutter/material 的 TextField | **复现** `No MaterialLocalizations found` |
+| probe5 + 补 `flutter/material` 的 `DefaultMaterialLocalizations.delegate` | 异常消失（证明就是类型不匹配） |
+| probe6：probe5 换成 `GlobalMaterialLocalizations.delegates`（主壳真实配置） | 同样通过 |
+| 172 个文件 sed 到 material_ui 后 `flutter analyze packages/kazumi/lib` | **0 error** |
+| 同上，`flutter analyze lib` | **0 error** |
+
+### 改法
+
+1. `packages/kazumi` 172 处 `package:flutter/material.dart` → `package:material_ui/material_ui.dart`；
+   `package:flutter/cupertino.dart` → `package:cupertino_ui/cupertino_ui.dart`（1 处）。
+2. `packages/kazumi/pubspec.yaml` 补 `material_ui: ^1.11.0` / `cupertino_ui: ^1.1.6`。
+3. 回归测试 `test/widget/plugin_view_page_test.dart` 必须用 **material_ui + 中文
+   delegates** 的真实壳配置建 `MaterialApp`。用 `package:flutter/material` 自建
+   会把 bug 藏起来（第一版就是因此误判「测试通过」）。
+4. `.github/workflows/widget-test.yml` 在每次 push 跑这个测试。
+
+### 教训（给以后的我）
+
+- **release 下的灰块 = 有异常被 ErrorWidget 吞了**，但错误原文只有 debug 才看得到。
+  先搭一个能跑的 widget test 把异常原文打出来，比在 release 里猜快得多。
+- 判断「两个东西是不是同一套」时，看 **import 路径的包名**，不是看类名。
+  `Theme`、`MaterialLocalizations` 两边同名同签名，编译器不会报错，
+  但运行时是两个类型。
+- 主工程和子包**混用两套 UI 库**是这类「界面莫名灰色/主题不对」的高发原因。
+
 ## 附：本次调研的证据
 
 | 结论 | 证据 |
