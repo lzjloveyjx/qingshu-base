@@ -224,6 +224,47 @@ Kazumi 本身就有 `BangumiAcceleration`（direct / ech / mirror）三档，默
 
 ---
 
+## 十、第 2 期交接（2026-11-25 17:00 下班挂起）
+
+### 已经做完并推送
+
+| 内容 | 位置 | commit |
+|---|---|---|
+| 播放源管理页 | `lib/pages/play_source_page.dart`，入口在「我的」桌面框架 + 手机列表 | `66704fd` |
+| libmpv 依赖 | `pubspec.yaml` 的 `media_kit_libs_android_video: 1.3.8` | `66704fd` |
+| 剧集表 | `anime_source.dart` 的 `AnimeEpisode` + `fetchEpisodes()`；详情页方格 | `bbc9b4d` |
+
+### 两个修正原计划的实测结论
+
+1. **「没有 WebView 内核」这道门槛不存在。** kazumi 包把 `flutter_inappwebview_android`
+   作为传递依赖带进来了，APK 的 `classes.dex` 里 320 处 `com/pichillilorenzo`。
+2. **镜像直接代理 v0 路径。** `api.kazumi.fyi/v0/episodes?subject_id=…` 返回 200，
+   `total` 与字段和官方一致，不需要 Kazumi 的 `BangumiAcceleration` 三层加速。
+
+### 重新开工第一件事
+
+看 `bbc9b4d` 的 Build APK 结果（workflow `build-apk.yml`）。
+晚上关机前那次构建是 16:49 起的，正常 13–15 分钟出包。
+成功 → 下载 artifacts、发 release v1.7.0；失败 → 拉日志看 `build/10_Build APK.txt`。
+
+### 第 2 期剩下的活（播放页）
+
+链路已经摸清，但有个取舍没定：
+
+- `VideoPage` 需要 `PlayerController` + `VideoPageController` + `HistoryController` + `DownloadController`
+- `PlayerController(shaderAssetService, downloadController, audioController)`
+- `VideoPageController(historyController, downloadRepository, downloadManager)`
+- 播放地址解析走 `WebViewVideoSourceService`（可用），依赖 `Plugin.queryBangumi` → `queryChapterRoads` 找源
+
+**取舍**：`video_page.dart` 是 581 行的 Kazumi 原皮页面，直接塞进青枢会变成两个 App 拼在一起。
+两条路：① 搬过来包一层青枢样式的壳；② 自己写一个精简播放页（只做播放/进度/选集）。
+
+### 踩过的坑（别再踩）
+
+- `LucideIcons.trash_2` **不存在**，用 `trash`。核对图标名时不要拿自己刚写的文件当白名单。
+- `HomeMediaCard` **没有** `cacheWidth` 参数（`StoryCover` 才有）。
+- `pubspec.yaml` 是**混用 CRLF/LF**，`edit_file` 匹配 `\n` 会失败，要用 `\r\n`。
+
 ## 附：本次调研的证据
 
 | 结论 | 证据 |
