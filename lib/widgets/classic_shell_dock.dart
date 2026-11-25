@@ -86,8 +86,9 @@ class _ClassicShellDockState extends State<ClassicShellDock> {
     (LucideIcons.circle_user_round, '我的'),
   ];
 
-  List<(IconData, String)> get _items =>
-      widget.showDrama ? _allItems : [_allItems[0], _allItems[2], _allItems[3]];
+  /// 第 2 项现在是动漫（青枢），不再受短剧开关影响：关掉短剧只停播放能力，
+  /// 不能连带把动漫入口一起藏掉。
+  List<(IconData, String)> get _items => _allItems;
 
   /// 背景块的连续项序号（欠阻尼弹簧驱动，松手回弹带过冲）。
   final ValueNotifier<double> _selection = ValueNotifier(0);
@@ -439,9 +440,7 @@ class _ClassicShellDockState extends State<ClassicShellDock> {
                 child: ClipRSuperellipse(
                   borderRadius: borderRadius,
                   child:
-                      eink ||
-                          (widget.showDrama && widget.selectedIndex == 1) ||
-                          oled
+                      eink || widget.selectedIndex == 1 || oled
                       ? bar
                       : BackdropFilter(
                           filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),

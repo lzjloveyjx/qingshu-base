@@ -34,11 +34,11 @@ class ShellDock extends StatelessWidget {
   final bool animating;
   final bool showDrama;
 
-  int get _displayIndex =>
-      !showDrama && selectedIndex > 0 ? selectedIndex - 1 : selectedIndex;
+  // 第 2 项是动漫，四页恒定；showDrama 现在只表示「短剧播放能力」，
+  // 不再参与 dock 的显示/索引映射。
+  int get _displayIndex => selectedIndex;
 
-  void _selectDisplayIndex(int index) =>
-      onSelected(!showDrama && index > 0 ? index + 1 : index);
+  void _selectDisplayIndex(int index) => onSelected(index);
 
   static const _items = [
     GlassDockItem(CupertinoIcons.house, '首页'),
@@ -174,10 +174,7 @@ class ShellDock extends StatelessWidget {
                 reduceMotion: eink,
                 onSelected: _selectDisplayIndex,
                 onReselected: _selectDisplayIndex,
-                items: [
-                  for (final (index, item) in _items.indexed)
-                    if (showDrama || index != 1) item,
-                ],
+                items: _items,
               ),
             ),
           ),

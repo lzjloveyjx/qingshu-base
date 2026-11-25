@@ -15,6 +15,7 @@ const kindLabels = {
   'manju': '漫剧',
   'manga': '漫画',
   'audio': '听书',
+  'anime': '动漫',
 };
 
 /// Compact length caption for a search card: 「共93集」 for dramas/manju,

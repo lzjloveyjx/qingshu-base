@@ -16,6 +16,7 @@ String homeKindLabel(String kind) => switch (kind) {
   'manju' => '漫剧',
   'manga' => '漫画',
   'audio' => '听书',
+  'anime' => '动漫',
   _ => '小说',
 };
 
@@ -24,6 +25,7 @@ IconData homeKindIcon(String kind) => switch (kind) {
   'manju' => LucideIcons.film,
   'manga' => LucideIcons.image,
   'audio' => LucideIcons.headphones,
+  'anime' => LucideIcons.clapperboard,
   _ => LucideIcons.book_open,
 };
 

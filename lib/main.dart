@@ -1,9 +1,8 @@
 import 'services/audio_downloader.dart';
 import 'widgets/desktop_app_frame.dart';
-import 'widgets/desktop_shell_scope.dart';
 import 'services/native_player.dart';
+import 'widgets/desktop_shell_scope.dart';
 import 'services/desktop_platform.dart';
-import 'services/platform_capabilities.dart';
 import 'services/platform_channel.dart';
 
 import 'package:material_ui/material_ui.dart';
@@ -22,10 +21,10 @@ import 'services/linux_platform.dart';
 import 'services/ios_platform.dart';
 
 import 'pages/home_page.dart';
+import 'pages/anime_page.dart';
 import 'pages/api_service_page.dart';
 import 'pages/audio_page.dart';
 import 'pages/cached_books_page.dart';
-import 'pages/drama_page.dart';
 import 'pages/library_page.dart';
 import 'pages/mine_page.dart';
 import 'pages/theme_page.dart';
@@ -34,17 +33,15 @@ import 'services/frame_stats.dart';
 import 'services/shell_visibility.dart';
 import 'services/app_theme.dart';
 import 'services/app_theme_style.dart';
-import 'services/appearance_prewarm.dart';
 import 'services/app_style_tokens.dart';
 import 'services/api_client.dart';
-import 'services/ai_reading/ai_controller.dart';
 import 'services/sync/multi_device_sync_service.dart';
+import 'services/ai_reading/ai_controller.dart';
 import 'services/audio_download_store.dart';
 import 'services/audio_floating_routes.dart';
 import 'services/drama_cache_preferences.dart';
 import 'services/audio_preferences.dart';
 import 'services/book_source_preference.dart';
-import 'services/drama_feature_preferences.dart';
 import 'services/player_panel_preferences.dart';
 import 'services/player_preferences.dart';
 import 'services/player_layout_preferences.dart';
@@ -57,7 +54,6 @@ import 'services/drama_channel_preferences.dart';
 import 'services/drama_download_store.dart';
 import 'services/drama_downloader.dart';
 import 'services/fair_memory.dart';
-import 'services/connectivity_status.dart';
 import 'services/home_feed_cache.dart';
 import 'services/haptic_preferences.dart';
 import 'services/library_store.dart';
@@ -76,7 +72,6 @@ import 'widgets/lazy_indexed_stack.dart';
 import 'widgets/app_ui/app_ui_scope.dart';
 import 'widgets/dock_auto_hide.dart';
 import 'widgets/shell_dock.dart';
-import 'widgets/unsupported_feature_page.dart';
 import 'widgets/home/home_design.dart';
 import 'widgets/home/home_skeleton.dart';
 import 'widgets/home/classic_home_skeleton.dart';
@@ -266,7 +261,6 @@ Future<void> _loadLocalData() async {
   ]);
   unawaited(optional(AudioPreferences.instance.load));
   unawaited(optional(BookSourcePreference.instance.load));
-  unawaited(optional(DramaFeaturePreferences.instance.load));
   // 多端同步的网络或安全存储故障不阻塞本机阅读。旧 WebDAV 配置由统一服务只读接管，绝不在这里启动云端覆盖流程。
   unawaited(
     optional(() async {
@@ -727,7 +721,6 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
   /// 首页头部是普通 sliver（不是折叠 AppBar），把 offset 归零即等价，吸顶的
   /// 分类栏会自己重新吸住。
   void _selectTab(int index) {
-    if (index == 1 && !DramaFeaturePreferences.instance.enabled.value) return;
     // 切 tab 是「回到入口」的明确动作：dock 收起时用户够不到它，必须在
     // 这类操作里无条件露出（与 DockAutoHide.reveal 的约定一致）。
     _dockAutoHide.reveal();
@@ -810,23 +803,15 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
           cueLoader: ApiClient.instance.searchCue,
         );
       case 1:
-        // iOS 首版没有原生播放器实现：把短剧页换成「暂不支持」占位，
-        // 避免进入播放页时触发缺失的 fqapp/native_player 通道。
-        return supportsVideoPlayback
-            ? const DramaPage()
-            : const UnsupportedFeaturePage(
-                icon: LucideIcons.clapperboard,
-                title: '短剧暂不支持',
-                description: '当前平台没有内置视频播放器。搜书、书架和阅读可以正常使用。',
-              );
+        // 青枢：底部第 2 个 tab 改成动漫（Bangumi 榜单 + 本季新番）。
+        // 短剧源在本机没有可用上游，「短剧」页因此让位给动漫。
+        return const AnimePage();
       case 2:
-        // 空书架上的「去书城找书」切回首页 tab；收藏空态的「找短剧」
-        // 切到短剧 tab。
+        // 空书架上的「去书城找书」切回首页 tab；收藏空态的「找动漫」
+        // 切到动漫 tab。
         return LibraryPage(
           onBrowse: () => _selectTab(0),
-          onFindDrama: DramaFeaturePreferences.instance.enabled.value
-              ? () => _selectTab(1)
-              : null,
+          onFindDrama: () => _selectTab(1),
         );
       default:
         return const MinePage();
@@ -838,21 +823,11 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    // 短剧频道在推荐（视频流）与浅色页之间切换时，悬浮 dock 和系统导航栏
-    // 要跟着换肤，所以停在壳层的 build 里监听。
-    dramaLightPageNotifier.addListener(_onDramaChromeChanged);
     // 墨水屏切换后重建壳层:部分子组件据此降级动效。
     einkModeNotifier.addListener(_onEinkModeChanged);
     // 初始可见页：页面据此决定是否暂停播放器/定时器。
     shellVisibleTab.value = _index;
-    DramaFeaturePreferences.instance.enabled.addListener(
-      _onDramaFeatureChanged,
-    );
     _startBackend();
-  }
-
-  void _onDramaChromeChanged() {
-    if (mounted) setState(() {});
   }
 
   void _onEinkModeChanged() {
@@ -877,26 +852,6 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
   bool _onShellUserScroll(UserScrollNotification notification) {
     _dockAutoHide.handleUserScroll(notification);
     return false;
-  }
-
-  void _onDramaFeatureChanged() {
-    if (!mounted) return;
-    final enabled = DramaFeaturePreferences.instance.enabled.value;
-    if (!enabled && desktopTab.value == 1) desktopTab.value = 0;
-    setState(() {
-      if (enabled) return;
-      _visitedTabs.remove(1);
-      _tabCache.remove(1);
-      _tabCache.remove(2);
-      if (_index == 1 || _premount == 1) {
-        ++_premountGeneration;
-        if (_index == 1) _index = 0;
-        _premount = null;
-        _pageFrom = _index.toDouble();
-        _pageMotion.value = 1;
-        shellVisibleTab.value = _index;
-      }
-    });
   }
 
   Future<void> _startBackend() async {
@@ -969,11 +924,7 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
 
   @override
   void dispose() {
-    dramaLightPageNotifier.removeListener(_onDramaChromeChanged);
     einkModeNotifier.removeListener(_onEinkModeChanged);
-    DramaFeaturePreferences.instance.enabled.removeListener(
-      _onDramaFeatureChanged,
-    );
     _dockReveal.detach();
     _homeScroll.dispose();
     _dockAutoHide.dispose();
@@ -999,15 +950,10 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
             index: index,
             children: [
               HomePage(cueLoader: ApiClient.instance.searchCue),
-              if (DramaFeaturePreferences.instance.enabled.value)
-                const DramaPage()
-              else
-                const SizedBox.shrink(),
+              const AnimePage(),
               LibraryPage(
                 onBrowse: () => desktopTab.value = 0,
-                onFindDrama: DramaFeaturePreferences.instance.enabled.value
-                    ? () => desktopTab.value = 1
-                    : null,
+                onFindDrama: () => desktopTab.value = 1,
               ),
               const MinePage(),
             ],
@@ -1018,14 +964,9 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
     AudioFloatingRouteScope.configure(context, hidden: _index == 1);
     final palette = HomePalette.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final isDramaTab = _index == 1;
-    // 短剧的推荐频道压在全屏视频流上，dock 用深色玻璃；看剧/漫剧/最近/收藏
-    // 是浅色页，dock 跟主题走，否则浅色外观下页面是奶白、dock 还是黑的。
-    final dramaOnVideo = isDramaTab && !dramaLightPageNotifier.value;
-    // 系统导航栏（Android 底部系统自绘的那条）按当前画布取色。Flutter 的
-    // light / dark 两套预设都把它写成纯黑底 + 白图标，浅色页面下会在最底部
-    // 留一条突兀的黑带；短剧只有视频流（推荐）背后是视频，仍用黑。
-    final lightSystemIcons = dramaOnVideo || isDark;
+    // 青枢：第 2 个 tab 已换成动漫页（浅色列表页），壳层不再有「全屏视频流」
+    // 那一页，状态栏 / 系统导航栏 / dock 一律按当前画布取色。
+    final lightSystemIcons = isDark;
     return Scaffold(
       extendBody: true,
       // 状态栏图标亮度挂在壳层、按选中 tab 切换：短剧页是黑底视频流（官方
@@ -1040,16 +981,10 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
                     : SystemUiOverlayStyle.dark)
                 .copyWith(
                   // 状态栏显式铺成画布色：透明状态栏在 Android 10+ 会被系统
-                  // 叠一层对比度黑纱，奶白画布会被压成灰带。短剧视频流仍透明。
-                  statusBarColor: dramaOnVideo
-                      ? Colors.transparent
-                      : palette.canvas,
-                  systemNavigationBarColor: dramaOnVideo
-                      ? Colors.black
-                      : palette.canvas,
-                  systemNavigationBarDividerColor: dramaOnVideo
-                      ? Colors.black
-                      : palette.canvas,
+                  // 叠一层对比度黑纱，奶白画布会被压成灰带。
+                  statusBarColor: palette.canvas,
+                  systemNavigationBarColor: palette.canvas,
+                  systemNavigationBarDividerColor: palette.canvas,
                   systemNavigationBarIconBrightness: lightSystemIcons
                       ? Brightness.light
                       : Brightness.dark,
@@ -1119,9 +1054,8 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
         child: ShellDock(
           selectedIndex: _index,
           onSelected: _selectTab,
-          overVideo: dramaOnVideo,
-          staticMaterial: shellDockStaticMaterial(overVideo: dramaOnVideo),
-          showDrama: DramaFeaturePreferences.instance.enabled.value,
+          overVideo: false,
+          staticMaterial: shellDockStaticMaterial(overVideo: false),
         ),
       ),
     );

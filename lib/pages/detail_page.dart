@@ -14,6 +14,7 @@ import '../models/media_item.dart';
 import '../models/media_description.dart';
 import '../models/series_detail.dart';
 import '../models/shuqi_book.dart';
+import '../services/anime/anime_source.dart' as anime;
 import '../services/lightnovel/lightnovel_source.dart' as lightnovel;
 import '../services/wenku8/wenku8_source.dart' as wenku8;
 import '../services/wenku8/wenku8_localize.dart';
@@ -64,6 +65,7 @@ import 'cached_book_reader.dart';
 import 'comic_reader_page.dart';
 import 'player_page.dart';
 import 'reader_page.dart';
+import 'anime_detail_page.dart';
 import 'shuqi_detail_page.dart';
 import 'ai_reading/settings/ai_book_settings_page.dart';
 
@@ -2645,6 +2647,15 @@ Future<void> openBookDetail(
           initialCover: item.cover,
         ),
       ),
+    );
+    return;
+  }
+  // 青枢：动漫（Bangumi）条目。第 1 期只有详情页，没有剧集与播放；
+  // 数据来自 Kazumi 镜像，封面走 wsrv.nl 代理。
+  if (anime.isAnimeItem(item)) {
+    await Navigator.push(
+      context,
+      MaterialPageRoute<void>(builder: (_) => AnimeDetailPage(item: item)),
     );
     return;
   }
