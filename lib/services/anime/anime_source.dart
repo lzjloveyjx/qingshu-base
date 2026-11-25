@@ -95,6 +95,9 @@ MediaItem? _toItem(Map subject) {
   final date = (subject['date'] ?? '').toString().trim();
   return MediaItem(
     id: 'anime:' + id.toString(),
+    // 书架内容键用 [source/]kind:<seriesId ?? id>；id 带冒号不满足 contentIdPattern，
+    // 所以把纯数字 subject id 放进 seriesId，让动漫能安全地入架与分区。
+    seriesId: id.toString(),
     title: title,
     cover: _cover(subject['images'] is Map ? subject['images'] as Map : null),
     author: '',

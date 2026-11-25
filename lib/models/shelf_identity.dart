@@ -22,7 +22,15 @@ import 'media_item.dart';
 /// Parses and formats the durable identity of one shelf entry.
 abstract final class ShelfIdentity {
   /// Kinds the shelf stores. Mirrors the `MediaItem.kind` values the app emits.
-  static const Set<String> kinds = {'book', 'audio', 'manga', 'video', 'manju'};
+  // 青枢：加入 anime（Bangumi 番剧），让动漫能入架并参与分区。
+  static const Set<String> kinds = {
+    'book',
+    'audio',
+    'manga',
+    'video',
+    'manju',
+    'anime',
+  };
 
   /// A data-source id: lowercase, 1–32 characters, `[a-z0-9_-]`, starting with
   /// a letter. `fanqie` and `shuqi` are the current values.

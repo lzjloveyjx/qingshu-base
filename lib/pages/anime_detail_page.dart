@@ -9,6 +9,7 @@ import 'package:flutter_lucide/flutter_lucide.dart';
 
 import '../models/media_item.dart';
 import '../services/anime/anime_source.dart';
+import '../services/shelf_store.dart';
 import '../widgets/home/home_design.dart';
 import '../widgets/home/home_media_card.dart';
 import '../widgets/home/home_shelf.dart';
@@ -28,11 +29,25 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
   List<AnimeEpisode> _episodes = const [];
   bool _loading = true;
   String? _error;
+  bool _inShelf = false;
 
   @override
   void initState() {
     super.initState();
+    _inShelf = ShelfStore.instance.containsItem(widget.item);
     _load();
+  }
+
+  Future<void> _toggleShelf() async {
+    final added = await ShelfStore.instance.toggle(widget.item);
+    if (!mounted) return;
+    setState(() => _inShelf = added);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(added ? '已加入书架' : '已移出书架'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   Future<void> _load() async {
@@ -70,6 +85,16 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
         backgroundColor: palette.canvas,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
+        actions: [
+          IconButton(
+            tooltip: _inShelf ? '移出书架' : '加入书架',
+            onPressed: _toggleShelf,
+            icon: Icon(
+              _inShelf ? LucideIcons.bookmark_check : LucideIcons.bookmark_plus,
+              color: palette.accentText,
+            ),
+          ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
