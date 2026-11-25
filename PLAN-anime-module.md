@@ -1,6 +1,6 @@
 # 动漫模块合并规划（Kazumi → 青枢）
 
-> 状态：**第 2 期已交付并发布**（v1.8.0，2026-11-25）；书架分区（第 3 期）待做
+> 状态：**第 3 期已交付并发布**（v1.9.0，2026-11-25）；剩细节打磨（弹幕/进度记忆等）
 > 编写日期：2026-11-25
 > 目标读者：本人（决策）+ 后续实现会话
 
@@ -289,6 +289,28 @@ Kazumi 本身就有 `BangumiAcceleration`（direct / ech / mirror）三档，默
 走 `https://gh-proxy.org/<blob-url>` ~322KB/s。artifact zip 50MB，解出的 APK 100MB，别搞混。
 
 下一步（第 3 期）：书架小说/动漫分区。播放体验可再补弹幕/进度记忆（迁移自 Kazumi）。
+### 2026-11-25 19:45 更新：第 3 期完成，v1.9.0 已发布
+
+- 构建 `2529291`：run `45603187721` → **success**（build 花 ~18 分钟，比平时久）。
+- APK：https://github.com/lzjloveyjx/qingshu-apk/releases/tag/v1.9.0
+- 文件 `qingshu-merge-v1.9.0.apk`，100,636,054 字节，
+  sha256 `bc5e86a08ea8c487d4121432b07bee001d81a01f8e72e214efec85cc50454d86`。
+- 下载 gh-proxy 返回 200，首字节 `504b0304`；解包确认 4 个 libmpv.so 都在。
+
+第 3 期交付（书架小说/动漫分区）：
+1. `ShelfIdentity.kinds` 加 `anime`，记录能被书架解析。
+2. anime_source 的 MediaItem 设 `seriesId=纯数字 subject id`：
+   id（`anime:数字`）带冒号不满足 contentIdPattern，内容键用 seriesId ?? id。
+3. 动漫详情页 AppBar 加「加入书架/移出书架」按钮。
+4. 书架媒介筛选行加「动漫」（_ShelfKindFilter，archive 与 classic 共用），
+   两种主题都能按动漫分区。
+
+### 收尾待调整的细节（用户说最后统一调）
+
+- 书架重开动漫时**评分丢失**：ShelfStore._recordOf 没存 score，_itemFrom 也不读。
+  次要问题，不影响分区；要修就在这两个函数加 score 的存取。
+- 播放体验：弹幕、播放进度记忆还没接（Kazumi 里有实现，可迁）。
+- 用户实测 v1.8.0「大体没问题，细节需要处理」——具体细节等用户逐条提。
 ### 重新开工第一件事
 
 看 `bbc9b4d` 的 Build APK 结果（workflow `build-apk.yml`）。
