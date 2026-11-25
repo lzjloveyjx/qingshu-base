@@ -40,8 +40,10 @@ void main() {
 
   for (final style in AppThemeStyle.values) {
     testWidgets(
-      'hidden drama keeps the library and profile destinations in $style',
+      'the anime destination is always present in $style',
       (tester) async {
+        // 第 2 项是动漫（青枢），不再随短剧开关消失：四个入口恒定，
+        // 索引也不需要再映射。
         var selected = -1;
         await tester.pumpWidget(
           MaterialApp(
@@ -58,11 +60,14 @@ void main() {
           ),
         );
         await tester.pumpAndSettle();
+        expect(find.text('动漫'), findsOneWidget);
         expect(find.text('短剧'), findsNothing);
         await tester.tap(find.text('书架'));
         expect(selected, 2);
         await tester.tap(find.text('我的'));
         expect(selected, 3);
+        await tester.tap(find.text('动漫'));
+        expect(selected, 1);
       },
     );
   }

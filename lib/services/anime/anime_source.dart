@@ -1,0 +1,246 @@
+/// 青枢 · 动漫（Bangumi）数据源适配层。
+///
+/// Bangumi 官方 API（api.bgm.tv / next.bgm.tv）在国内直连不通（实测 20s 超时），
+/// 所以统一走 Kazumi 官方镜像 `api.kazumi.fyi`，与 Kazumi 默认策略一致。
+///
+/// 身份约定：MediaItem.source == 'anime'；MediaItem.id == 'anime:{subjectId}'；
+///          kind == 'anime'。
+library;
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+
+import '../../models/media_item.dart';
+
+const String kAnimeSource = 'anime';
+const String _kMirror = 'https://api.kazumi.fyi';
+const String _kUa =
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+    '(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
+
+bool isAnimeItem(MediaItem item) => item.source == kAnimeSource;
+
+/// 从 MediaItem.id 取 Bangumi subject id。
+int animeIdOf(String itemId) {
+  final m = RegExp(r'^anime:(\d+)$').firstMatch(itemId);
+  return m == null ? 0 : (int.tryParse(m.group(1)!) ?? 0);
+}
+
+Future<dynamic> _getJson(String url) async {
+  final client = HttpClient();
+  try {
+    client.userAgent = _kUa;
+    client.connectionTimeout = const Duration(seconds: 15);
+    final req = await client.getUrl(Uri.parse(url));
+    req.headers.set('accept', 'application/json');
+    final res = await req.close().timeout(const Duration(seconds: 20));
+    if (res.statusCode != 200) return null;
+    final bytes = await consolidateHttpClientResponseBytes(res);
+    return jsonDecode(utf8.decode(bytes, allowMalformed: true));
+  } catch (e) {
+    debugPrint('anime _getJson failed: ' + url + ' :: ' + e.toString());
+    return null;
+  } finally {
+    client.close();
+  }
+}
+
+/// 封面：bgm 图床在国内直连不通。
+///
+/// Kazumi 的做法是套 wsrv.nl 图片代理（见 bangumi_image_url_rewriter.dart），
+/// 这里照搬同一策略，避免自己发明一个不存在的镜像路径。
+String _cover(Map? images) {
+  if (images == null) return '';
+  final raw = (images['large'] ?? images['common'] ?? images['grid'] ?? '')
+      .toString()
+      .trim();
+  if (raw.isEmpty) return '';
+  final uri = Uri.tryParse(raw);
+  if (uri == null) return raw;
+  final isBangumiImage = uri.host == 'lain.bgm.tv' ||
+      (uri.host == 'api.bgm.tv' &&
+          uri.pathSegments.length == 4 &&
+          uri.pathSegments[0] == 'v0' &&
+          uri.pathSegments[3] == 'image');
+  if (!isBangumiImage) return raw;
+  final sourceUrl =
+      uri.host + uri.path + (uri.hasQuery ? '?' + uri.query : '');
+  return Uri.https('wsrv.nl', '/', {
+    'url': sourceUrl,
+    if (uri.path.toLowerCase().endsWith('.gif')) 'n': '-1',
+  }).toString();
+}
+
+/// 一条 Bangumi subject → MediaItem。
+MediaItem? _toItem(Map subject) {
+  final id = subject['id'];
+  if (id is! int) return null;
+  // 镜像的字段名是 nameCN（不是 nameCn），新老两种都认。
+  final name = (subject['nameCN'] ?? subject['nameCn'] ?? subject['name_cn'] ??
+          subject['name'] ?? '')
+      .toString()
+      .trim();
+  final original = (subject['name'] ?? '').toString().trim();
+  final title = name.isNotEmpty ? name : original;
+  if (title.isEmpty) return null;
+  final rating = subject['rating'];
+  double? score;
+  if (rating is Map) {
+    final s = rating['score'];
+    if (s is num && s > 0) score = s.toDouble();
+  }
+  final date = (subject['date'] ?? '').toString().trim();
+  return MediaItem(
+    id: 'anime:' + id.toString(),
+    title: title,
+    cover: _cover(subject['images'] is Map ? subject['images'] as Map : null),
+    author: '',
+    badge: date.length >= 4 ? date.substring(0, 4) : '',
+    ep: (subject['eps'] ?? subject['total_episodes'] ?? '').toString(),
+    kind: 'anime',
+    score: score,
+    intro: (subject['summary'] ?? '').toString().trim(),
+    source: kAnimeSource,
+  );
+}
+
+/// 榜单（镜像 /kazumi/v1/popular/subjects）。
+Future<List<MediaItem>> browsePopular({int offset = 0, int limit = 24}) async {
+  final data = await _getJson(
+    _kMirror + '/kazumi/v1/popular/subjects?limit=' + limit.toString() +
+    '&offset=' + offset.toString(),
+  );
+  if (data is! Map) return const [];
+  final list = data['data'];
+  if (list is! List) return const [];
+  final out = <MediaItem>[];
+  for (final row in list) {
+    if (row is! Map) continue;
+    final subject = row['subject'] is Map ? row['subject'] as Map : row;
+    final item = _toItem(subject);
+    if (item != null) out.add(item);
+  }
+  return out;
+}
+
+/// 季度时间表（镜像 /kazumi/v1/calendar/season），按星期一~日返回 7 组。
+Future<List<List<MediaItem>>> browseSeason({DateTime? at}) async {
+  final now = at ?? DateTime.now();
+  // 当季：1-3 / 4-6 / 7-9 / 10-12
+  final seasonStartMonth = ((now.month - 1) ~/ 3) * 3 + 1;
+  final start = DateTime(now.year, seasonStartMonth, 1);
+  final end = DateTime(now.year, seasonStartMonth + 3, 0);
+  String fmt(DateTime d) =>
+      d.year.toString().padLeft(4, '0') + '-' +
+      d.month.toString().padLeft(2, '0') + '-' +
+      d.day.toString().padLeft(2, '0');
+  final data = await _getJson(
+    _kMirror + '/kazumi/v1/calendar/season?start=' + fmt(start) + '&end=' + fmt(end),
+  );
+  if (data is! Map) return const [];
+  final out = <List<MediaItem>>[];
+  for (var day = 1; day <= 7; day++) {
+    final rows = data[day.toString()];
+    final items = <MediaItem>[];
+    if (rows is List) {
+      for (final row in rows) {
+        if (row is! Map) continue;
+        final subject = row['subject'] is Map ? row['subject'] as Map : row;
+        final item = _toItem(subject);
+        if (item != null) items.add(item);
+      }
+    }
+    out.add(items);
+  }
+  return out;
+}
+
+/// 番剧详情（结构化），给详情页直接用。
+class AnimeDetail {
+  const AnimeDetail({
+    required this.id,
+    required this.title,
+    required this.original,
+    required this.cover,
+    required this.summary,
+    this.score,
+    this.rank,
+    this.date = '',
+    this.eps,
+    this.platform = '',
+    this.tags = const [],
+  });
+
+  final int id;
+  final String title;
+  final String original;
+  final String cover;
+  final String summary;
+  final double? score;
+  final int? rank;
+  final String date;
+  final int? eps;
+  final String platform;
+  final List<String> tags;
+}
+
+/// 拉 subject 详情；失败返回 null（由页面显示重试态）。
+Future<AnimeDetail?> fetchSubjectDetail(int id) async {
+  if (id == 0) return null;
+  final data = await _getJson(_kMirror + '/p1/subjects/' + id.toString());
+  if (data is! Map) return null;
+  final rating = data['rating'] is Map ? data['rating'] as Map : null;
+  double? score;
+  int? rank;
+  if (rating != null) {
+    final s = rating['score'];
+    if (s is num && s > 0) score = s.toDouble();
+    final r = rating['rank'];
+    if (r is num && r > 0) rank = r.toInt();
+  }
+  final tags = <String>[];
+  for (final tag in (data['tags'] is List ? data['tags'] as List : const [])) {
+    if (tag is Map) {
+      final name = (tag['name'] ?? '').toString().trim();
+      if (name.isNotEmpty) tags.add(name);
+    }
+  }
+  return AnimeDetail(
+    id: id,
+    title: (data['nameCN'] ?? data['nameCn'] ?? data['name'] ?? '')
+        .toString()
+        .trim(),
+    original: (data['name'] ?? '').toString().trim(),
+    cover: _cover(data['images'] is Map ? data['images'] as Map : null),
+    summary: (data['summary'] ?? '').toString().trim(),
+    score: score,
+    rank: rank,
+    date: (data['date'] ?? '').toString().trim(),
+    eps: data['eps'] is num ? (data['eps'] as num).toInt() : null,
+    platform: (data['platform'] ?? '').toString().trim(),
+    tags: tags,
+  );
+}
+
+/// 番剧详情（镜像 /p1/subjects/{id}）。
+Future<Map<String, dynamic>> fetchDetail(String itemId) async {
+  final id = animeIdOf(itemId);
+  if (id == 0) return {'source': kAnimeSource};
+  final data = await _getJson(_kMirror + '/p1/subjects/' + id.toString());
+  if (data is! Map) return {'source': kAnimeSource};
+  final item = _toItem(data);
+  return {
+    'book_id': id.toString(),
+    'book_name': item?.title ?? '',
+    'detail_page_thumb_url': item?.cover ?? '',
+    'abstract': (data['summary'] ?? '').toString(),
+    'author_info': {'name': ''},
+    'category': '动漫',
+    'tags': const <String>[],
+    'creation_status': -1,
+    'source': kAnimeSource,
+  };
+}

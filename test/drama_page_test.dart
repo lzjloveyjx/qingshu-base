@@ -1250,7 +1250,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('the bottom bar lists 短剧 right after 首页', (tester) async {
+  testWidgets('the bottom bar lists 动漫 right after 首页', (tester) async {
     // 显式钉住 Android：接线守卫需要 disabledProbe 返回 false，
     // 若 CI 将来复用本文件跑桌面平台则 disabledProbe 会短路、拖拽不翻转。
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
@@ -1268,20 +1268,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Scoped to the bar: the home page's own category strip also has a 短剧 entry.
+    // Scoped to the bar: the home page's own category strip also has a 动漫 entry.
     Finder navLabel(String label) =>
         find.descendant(of: find.byType(GlassDock), matching: find.text(label));
 
     final home = tester.getCenter(navLabel('首页')).dx;
-    final drama = tester.getCenter(navLabel('短剧')).dx;
+    final anime = tester.getCenter(navLabel('动漫')).dx;
     final library = tester.getCenter(navLabel('书架')).dx;
     final mine = tester.getCenter(navLabel('我的')).dx;
-    expect(home, lessThan(drama));
-    expect(drama, lessThan(library));
+    expect(home, lessThan(anime));
+    expect(anime, lessThan(library));
     expect(library, lessThan(mine));
-
-    // The destination is lazy: nothing of the 短剧 feed is built before a tap.
-    expect(find.byType(DramaPage), findsNothing);
 
     // 底栏仍由 DockAutoHideSlide 包裹（滚动自动隐藏），且切 tab 时必须
     // 无条件露出：收起状态下用户够不到底栏，换页是最明确的前往意图。
@@ -1304,33 +1301,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(slideWidget().offset, Offset.zero, reason: '上滑必须露出底栏');
 
-    await tester.tap(navLabel('短剧'));
+    await tester.tap(navLabel('动漫'));
     await tester.pumpAndSettle();
     expect(slideWidget().offset, Offset.zero, reason: '切 tab 后底栏必须保持可见');
-    expect(find.byType(DramaPage), findsOneWidget);
-    expect(find.byKey(const Key('drama_feed')), findsOneWidget);
-    // 用户已移除右侧追剧入口。
-    expect(find.text('追剧'), findsNothing);
 
-    // 浅色外观下：推荐是视频流，dock 仍是深色玻璃；切到看剧（浅色页）后
-    // dock 跟着回浅色，不能页面是奶白、dock 还是一条黑的。
+    // 动漫页是浅色列表页：dock 跟主题走，不再为全屏视频流切深色。
     Brightness dockBrightness() =>
         Theme.of(tester.element(find.byType(GlassDock))).brightness;
     ShellDock shellDock() => tester.widget<ShellDock>(find.byType(ShellDock));
-
-    expect(dockBrightness(), Brightness.dark);
-    expect(shellDock().staticMaterial, isTrue, reason: '视频流上不做实时折射');
-    await tester.tap(find.text('看剧'));
-    await tester.pumpAndSettle();
     expect(dockBrightness(), Brightness.light);
     expect(shellDock().staticMaterial, isFalse);
-    await tester.tap(find.text('推荐'));
-    await tester.pumpAndSettle();
-    expect(dockBrightness(), Brightness.dark);
-    expect(shellDock().staticMaterial, isTrue);
-    // The shell mounts its own DramaPage without seams, so its inline session
-    // starts a real directory request here. Advance past the client timeout to
-    // drain that timer, which would otherwise outlive the test.
+
+    // 动漫页首帧就要去拉榜单，垂直接口在测试里拿不到响应；把网络请求的
+    // 定时器推到超时之后再收尾，免得它活到用例结束。
     await tester.pump(const Duration(seconds: 25));
     await tester.pump();
     expect(tester.takeException(), isNull);
