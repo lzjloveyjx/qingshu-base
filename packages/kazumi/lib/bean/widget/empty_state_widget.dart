@@ -22,9 +22,12 @@ class GeneralEmptyState extends StatelessWidget {
     final colorScheme = theme.colorScheme;
     final textTheme = theme.textTheme;
 
+    // 青枢：这里原来套 SingleChildScrollView，被放进 sliver（无界高度）时
+    // 会抛 "Vertical viewport was given unbounded height"，release 构建下
+    // 整块退化成没有文字的灰块（规则管理/规则仓库空列表时必现）。
+    // 空态本来就不需要滚动，去掉滚动层即可。
     return Center(
-      child: SingleChildScrollView(
-        primary: false,
+      child: Padding(
         padding: compact
             ? const EdgeInsets.all(16)
             : const EdgeInsets.symmetric(horizontal: 24, vertical: 40),

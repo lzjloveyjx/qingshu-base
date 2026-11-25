@@ -36,9 +36,10 @@ class GeneralErrorWidget extends StatelessWidget {
       ...actions,
     ];
 
+    // 青枢：同 GeneralEmptyState —— 放进 sliver 时 SingleChildScrollView
+    // 会因无界高度抛异常，release 下变成灰块。去掉滚动层。
     return Center(
-      child: SingleChildScrollView(
-        primary: false,
+      child: Padding(
         padding: EdgeInsets.all(compact ? 16 : 24),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 440),

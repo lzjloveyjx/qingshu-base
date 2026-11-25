@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/widget/embedded_native_control_area.dart';
 import 'package:kazumi/services/platform/desktop_window_config.dart';
 import 'package:window_manager/window_manager.dart';
@@ -39,7 +38,10 @@ class SysAppBar extends StatelessWidget implements PreferredSizeWidget {
         leading ??
         ((ModalRoute.of(context)?.impliesAppBarDismissal ?? false)
             ? IconButton(
-                onPressed: () => context.maybePop(),
+                // 青枢：context.maybePop() 是 flutter_modular 的扩展，主壳是
+                // Riverpod 没有 ModularApp，调用会抛 NoSuchMethodError，
+                // release 下整页退化成灰色错误块。换成 Navigator。
+                onPressed: () => Navigator.maybePop(context),
                 icon: const Icon(Icons.arrow_back),
               )
             : null);
