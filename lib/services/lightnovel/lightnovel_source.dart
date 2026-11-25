@@ -160,7 +160,7 @@ Future<List<MediaItem>> search(String keyword) async {
   }
 }
 /// 详情页：书名/作者/插画/状态/文库/简介/标签。
-Future<Map<String, dynamic>> fetchDetail(String bookUrl) async {
+Future<Map<String, dynamic>> fetchDetail(String bookUrl, {String tab = '小说'}) async {
   final id = _bookId(bookUrl);
   try {
     final html = await _get(kLightNovelBase + '/book/' + id.toString());
@@ -217,7 +217,7 @@ Future<Map<String, dynamic>> fetchDetail(String bookUrl) async {
 }
 
 /// 目录：书页只有当前卷，沿「下一章」链把全书走完（上限保护）。
-Future<List<List<Chapter>>> fetchDirectory(String bookUrl) async {
+Future<List<List<Chapter>>> fetchDirectory(String bookUrl, {String tab = '小说'}) async {
   final id = _bookId(bookUrl);
   if (id == 0) return const [];
   try {
