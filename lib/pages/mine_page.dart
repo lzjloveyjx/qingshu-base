@@ -22,6 +22,7 @@ import '../widgets/mine/mine_entries.dart';
 import '../widgets/wenku/wenku_ui.dart';
 import '../services/book_source_preference.dart';
 import 'book_source_page.dart';
+import 'play_source_page.dart';
 import 'detail_page.dart';
 import 'reading_statistics_page.dart';
 import 'settings_page.dart';
@@ -412,6 +413,19 @@ class _MinePageState extends State<MinePage> {
                     ),
                   ),
                   SizedBox(height: style.entryGap),
+                  FeatureEntry(
+                    key: const ValueKey('mine-play-source-desktop'),
+                    title: '播放源',
+                    subtitle: '动漫的规则源：安装、更新与仓库地址',
+                    icon: LucideIcons.plug,
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute<void>(
+                        builder: (_) => const PlaySourcePage(),
+                      ),
+                    ),
+                  ),
+                  SizedBox(height: style.entryGap),
                   const MineEntries(),
                 ],
               ),
@@ -476,6 +490,19 @@ class _MinePageState extends State<MinePage> {
                   context,
                   MaterialPageRoute<void>(
                     builder: (_) => const BookSourcePage(),
+                  ),
+                ),
+              ),
+              SizedBox(height: style.entryGap),
+              FeatureEntry(
+                key: const ValueKey('mine-play-source'),
+                title: '播放源',
+                subtitle: '动漫的规则源：安装、更新与仓库地址',
+                icon: LucideIcons.plug,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => const PlaySourcePage(),
                   ),
                 ),
               ),
