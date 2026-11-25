@@ -1,6 +1,6 @@
 part of 'library_page.dart';
 
-/// 书架 tab 的媒介类型筛选行:全部 / 小说 / 漫画 / 短剧 / 漫剧 / 听书。
+/// 书架 tab 的媒介类型筛选行:全部 / 小说 / 动漫 / 漫画 / 短剧 / 漫剧 / 听书。
 ///
 /// 书架原本按「收藏」是否视频源把条目分到两个 tab(`_isVideoKind`),现在
 /// 书架 tab 收全部条目,靠这一行区分媒介。键值与既有的收藏筛选
@@ -17,6 +17,7 @@ class _ShelfKindFilter extends StatelessWidget {
       const kinds = [
         (null, '全部'),
         ('book', '小说'),
+        ('anime', '动漫'),
         ('manga', '漫画'),
         ('video', '短剧'),
         ('manju', '漫剧'),
