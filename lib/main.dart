@@ -6,7 +6,7 @@ import 'services/desktop_platform.dart';
 import 'services/platform_channel.dart';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:media_kit/media_kit.dart';
+import 'package:media_kit/media_kit.dart' as mediakit;
 import 'package:flutter/foundation.dart'
     show LicenseRegistry, LicenseEntryWithLineBreaks;
 import 'package:flutter/services.dart';
@@ -17,6 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hive_ce_flutter/hive_flutter.dart';
 
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'services/linux_platform.dart';
 import 'services/ios_platform.dart';
@@ -180,8 +181,8 @@ Future<void> _initializeLocalData() {
 /// Android 播放内核初始化。desktop/ios 各自在自己的 platform 文件里调过了，
 /// 只有 Android 漏了 —— 装上 libmpv 后必须补上，否则 media_kit 建 Player 就抛错。
 Future<void> _initAndroidMediaKit() async {
-  if (defaultTargetPlatform == TargetPlatform.android) {
-    MediaKit.ensureInitialized();
+  if (Platform.isAndroid) {
+    mediakit.MediaKit.ensureInitialized();
   }
 }
 
