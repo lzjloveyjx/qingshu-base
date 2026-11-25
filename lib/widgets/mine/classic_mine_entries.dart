@@ -6,6 +6,7 @@ import 'package:flutter_lucide/flutter_lucide.dart';
 import '../../pages/about_page.dart';
 import '../../pages/book_source_page.dart';
 import '../../pages/cached_books_page.dart';
+import '../../pages/play_source_page.dart';
 import '../../pages/cached_dramas_page.dart';
 import '../../pages/library_backup_page.dart';
 import '../home/home_design.dart';
@@ -126,6 +127,12 @@ class ClassicMineEntries extends StatelessWidget {
             icon: LucideIcons.library_big,
             label: '书源',
             onTap: () => _push(context, const BookSourcePage()),
+          ),
+          // 播放源同样与「工具」分组无关：动漫的规则源入口在任何布局下都要在。
+          ClassicMineEntryRow(
+            icon: LucideIcons.plug,
+            label: '播放源',
+            onTap: () => _push(context, const PlaySourcePage()),
           ),
           if (showTools) ...[
             ClassicMineEntryRow(
