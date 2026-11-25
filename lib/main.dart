@@ -6,6 +6,7 @@ import 'services/desktop_platform.dart';
 import 'services/platform_channel.dart';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:flutter/foundation.dart'
     show LicenseRegistry, LicenseEntryWithLineBreaks;
 import 'package:flutter/services.dart';
@@ -176,6 +177,14 @@ Future<void> _initializeLocalData() {
   return initialization;
 }
 
+/// Android 播放内核初始化。desktop/ios 各自在自己的 platform 文件里调过了，
+/// 只有 Android 漏了 —— 装上 libmpv 后必须补上，否则 media_kit 建 Player 就抛错。
+Future<void> _initAndroidMediaKit() async {
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    MediaKit.ensureInitialized();
+  }
+}
+
 Future<void> _loadLocalData() async {
   await Hive.initFlutter();
   // 以下初始化互相独立（各开各的 box / 各读各的配置），串行等只会把
@@ -203,6 +212,10 @@ Future<void> _loadLocalData() async {
     // 【青枢】装配 Kazumi 模块（轻小说规则源 / 书架 / 阅读偏好 / 朗读）。
     // 放在可选段：它失败只让轻小说不可用，不该拖垮整个启动。
     optional(KazumiBootstrap.ensureReady),
+    // 【青枢】Android 播放内核初始化。之前只在 desktop/ios 调过，装了 libmpv 后
+    // Android 也必须 ensureInitialized，否则 media_kit 一建 Player 就抛
+    // "MediaKit is not initialized"。放在可选段：失败只让动漫不能播。
+    optional(_initAndroidMediaKit),
     LibraryStore.instance.init(),
     // The 加入书架 collection is optional data: a failure here must not block
     // startup, which is why it shares the retryable bootstrap with the history.
