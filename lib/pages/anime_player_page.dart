@@ -61,6 +61,8 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
   bool _resolving = true;
   String? _error;
   List<Plugin> _pluginsWithResults = const [];
+  /// 每个源第一次搜索命中的详情 URL，避免加载线路时再搜一遍。
+  final Map<String, String> _sourceUrlByPlugin = {};
   int _pluginIndex = 0;
   List<Road> _roads = const [];
   int _roadIndex = 0;
@@ -106,7 +108,10 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
       for (final plugin in plugins.pluginList) {
         try {
           final result = await plugin.queryBangumi(keyword, shouldRethrow: true);
-          if (result.data.isNotEmpty) found.add(plugin);
+          if (result.data.isNotEmpty) {
+            found.add(plugin);
+            _sourceUrlByPlugin[plugin.name] = result.data.first.src;
+          }
         } catch (_) {}
       }
       if (found.isEmpty) {
@@ -141,9 +146,9 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
     });
     try {
       final plugin = _pluginsWithResults[pluginIndex];
-      // 搜索结果里第一条的 src 就是详情 URL。
-      final result = await plugin.queryBangumi(widget.item.title, shouldRethrow: true);
-      final src = result.data.first.src;
+      // 用第一次搜索时缓存的详情 URL，不再重复搜一遍。
+      final src = _sourceUrlByPlugin[plugin.name];
+      if (src == null || src.isEmpty) throw StateError('这个源没有详情地址');
       final roads = await plugin.queryChapterRoads(src);
       if (roads.isEmpty) throw StateError('这个源没有分集');
       // 默认从传入的集数开始（减 1 转 0 基）。
@@ -154,7 +159,7 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
         _pluginIndex = pluginIndex;
         _roads = roads;
         _roadIndex = 0;
-        _episodeIndex = initial < 0 ? 0 : initial,
+        _episodeIndex = initial < 0 ? 0 : initial;
         _resolving = false;
       });
       await _playCurrent();
