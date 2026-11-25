@@ -120,12 +120,14 @@ class ClassicMineEntries extends StatelessWidget {
       child: Column(
         children: [
           Divider(height: 1, thickness: 0.6, color: palette.line),
+          // 书源与「工具」分组无关：手机把离线缓存/备份提到上方格子，
+          // 但书源在任何布局下都必须可进入，所以放在 showTools 之外。
+          ClassicMineEntryRow(
+            icon: LucideIcons.library_big,
+            label: '书源',
+            onTap: () => _push(context, const BookSourcePage()),
+          ),
           if (showTools) ...[
-            ClassicMineEntryRow(
-              icon: LucideIcons.library_big,
-              label: '书源',
-              onTap: () => _push(context, const BookSourcePage()),
-            ),
             ClassicMineEntryRow(
               icon: LucideIcons.hard_drive_download,
               label: '离线缓存',
