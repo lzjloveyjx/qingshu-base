@@ -12,6 +12,7 @@ import '../services/anime/anime_source.dart';
 import '../widgets/home/home_design.dart';
 import '../widgets/home/home_media_card.dart';
 import '../widgets/home/home_shelf.dart';
+import 'anime_player_page.dart';
 
 class AnimeDetailPage extends StatefulWidget {
   const AnimeDetailPage({super.key, required this.item});
@@ -215,7 +216,7 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '剧集表已经能看到了。真正点开播放还要接播放器 —— 那是第 2 期的后半段。',
+                  '点剧集会搜索已安装的播放源。如果没装过规则，先去「我的 → 播放源」装几条。',
                   style: TextStyle(
                     fontSize: 12,
                     height: 1.6,
@@ -236,18 +237,16 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
     return base.copyWith(cover: detail.cover);
   }
 
-  /// 一集一个方块。点按暂时只提示「还不能播」——真正拉起播放要等播放页接好。
+  /// 一集一个方块。点开精简播放页，按集数定位。
   Widget _episodeChip(HomePalette palette, AnimeEpisode episode) {
+    final episodeNumber = episode.sort.round();
     return InkWell(
       borderRadius: BorderRadius.circular(8),
-      onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('第 ' + episode.sort.toString() + ' 话：播放还没接上'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      },
+      onTap: () => openAnimePlayer(
+        context,
+        item: widget.item,
+        episode: episodeNumber < 1 ? 1 : episodeNumber,
+      ),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
