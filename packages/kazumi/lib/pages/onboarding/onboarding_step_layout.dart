@@ -1,4 +1,8 @@
-import 'package:material_ui/material_ui.dart';
+// material_ui 也导出了 MaterialShapes / RoundedPolygon（和 material_new_shapes
+// 是两套几何类型）。这几个文件要的是 material_new_shapes 那份——它有 Morph
+// 和 path 扩展，material_ui 没有；两套同名会 ambiguous_import，所以这里藏掉。
+import 'package:material_ui/material_ui.dart'
+    hide MaterialShapes, RoundedPolygon;
 import 'package:kazumi/bean/widget/state_presentation.dart';
 import 'package:material_new_shapes/material_new_shapes.dart';
 
