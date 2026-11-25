@@ -133,8 +133,10 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
       _resolving = true;
       _error = null;
       _roadIndex = 0;
-      _episodeIndex =
-          (widget.episode - 1).clamp(0, _episodeUrls.length - 1).toInt();
+      // 分集为空时 clamp(0, -1) 会抛 ArgumentError，先挡住。
+      _episodeIndex = _episodeUrls.isEmpty
+          ? 0
+          : (widget.episode - 1).clamp(0, _episodeUrls.length - 1).toInt();
     });
     await _playCurrent();
   }
