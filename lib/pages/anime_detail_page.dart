@@ -24,6 +24,7 @@ class AnimeDetailPage extends StatefulWidget {
 
 class _AnimeDetailPageState extends State<AnimeDetailPage> {
   AnimeDetail? _detail;
+  List<AnimeEpisode> _episodes = const [];
   bool _loading = true;
   String? _error;
 
@@ -38,10 +39,16 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
       _loading = true;
       _error = null;
     });
-    final detail = await fetchSubjectDetail(animeIdOf(widget.item.id));
+    final id = animeIdOf(widget.item.id);
+    final results = await Future.wait<Object>([
+      fetchSubjectDetail(id),
+      fetchEpisodes(id),
+    ]);
     if (!mounted) return;
+    final detail = results[0] as AnimeDetail?;
     setState(() {
       _detail = detail;
+      _episodes = results[1] as List<AnimeEpisode>;
       _loading = false;
       _error = detail == null ? '详情没拉到，检查网络后重试' : null;
     });
@@ -157,6 +164,26 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
             style: TextStyle(fontSize: 12, color: palette.muted, height: 1.6),
           ),
         ],
+        if (_episodes.isNotEmpty) ...[
+          const SizedBox(height: 22),
+          Text(
+            '剧集 · ' + _episodes.length.toString(),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: palette.ink,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final episode in _episodes)
+                _episodeChip(palette, episode),
+            ],
+          ),
+        ],
         const SizedBox(height: 22),
         Text(
           '简介',
@@ -188,7 +215,7 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
-                  '第 1 期只做到「看得见」。播放内核要在第 2 期装，装完这里才会出现剧集列表。',
+                  '剧集表已经能看到了。真正点开播放还要接播放器 —— 那是第 2 期的后半段。',
                   style: TextStyle(
                     fontSize: 12,
                     height: 1.6,
@@ -207,6 +234,34 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
   MediaItem _detailItem(MediaItem base, AnimeDetail detail) {
     if (detail.cover.isEmpty || detail.cover == base.cover) return base;
     return base.copyWith(cover: detail.cover);
+  }
+
+  /// 一集一个方块。点按暂时只提示「还不能播」——真正拉起播放要等播放页接好。
+  Widget _episodeChip(HomePalette palette, AnimeEpisode episode) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('第 ' + episode.sort.toString() + ' 话：播放还没接上'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: palette.soft,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          episode.sort == episode.sort.roundToDouble()
+              ? episode.sort.toStringAsFixed(0)
+              : episode.sort.toStringAsFixed(1),
+          style: TextStyle(fontSize: 13, color: palette.ink),
+        ),
+      ),
+    );
   }
 
   Widget _chip(HomePalette palette, String text) {
