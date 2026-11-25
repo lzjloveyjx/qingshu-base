@@ -96,6 +96,12 @@ dependencies:
   upgrader: ^12.3.0
   open_filex: ^4.7.0
   material_new_shapes: ^1.0.0
+  # 青枢：主壳用的是 material_ui（Flutter 3.47 起 material 拆分出来的独立包），
+  # 与 package:flutter/material 是两套互相独立的实现。Kazumi 原版全部 import
+  # package:flutter/material.dart，嵌进主壳后 Theme.of / MaterialLocalizations
+  # 都拿不到 —— release 下 ErrorWidget 直接渲染成灰块。所以这里跟主壳对齐。
+  material_ui: ^1.11.0
+  cupertino_ui: ^1.1.6
   image_picker: ^1.2.1
   app_links: ^7.2.2
 

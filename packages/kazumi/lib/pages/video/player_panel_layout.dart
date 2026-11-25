@@ -1,6 +1,6 @@
 import 'dart:ui' show PointerDeviceKind;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 double playerPanelGutter(double maxWidth) =>
     maxWidth > 760 ? (maxWidth - 728) / 2 : 16.0;

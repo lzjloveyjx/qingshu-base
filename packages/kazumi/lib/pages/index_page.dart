@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:kazumi/pages/menu/menu.dart';
 import 'package:kazumi/services/deep_links/app_deep_links.dart';
 

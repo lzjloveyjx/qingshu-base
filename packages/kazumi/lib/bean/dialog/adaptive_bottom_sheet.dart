@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Mudit Purohit. See licenses/m3e_core.txt.
 import 'dart:math' as math;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter/physics.dart';
 
 import 'package:kazumi/bean/widget/expressive_motion.dart';
