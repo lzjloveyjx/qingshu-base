@@ -1,10 +1,8 @@
-/// 青枢 · 动漫精简播放页（第 2 期）。
+/// 青枢 · 动漫播放页。
 ///
-/// 复用 Kazumi 的规则引擎（搜索播放源 → 取分集 → WebView 解析真实地址），
-/// 但播放器用青枢自己的 media_kit —— 不搬 Kazumi 581 行原皮 VideoPage。
-///
-/// 链路：PluginsController（规则）→ queryChapterRoads（分集 URL）
-///      → WebViewVideoSourceService.resolve（真实 m3u8/mp4）→ Player.open。
+/// 选源弹窗选好后进这里：只消费 picked，自己不再搜索。
+/// 播放器用 media_kit；在默认控制条之外补了倍速 / 画幅 / 跳过片头 /
+/// 定时关闭 / 锁屏 / 播放信息这几个 Kazumi 有而我们原来缺的功能。
 library;
 
 import 'dart:async';
@@ -22,17 +20,23 @@ import 'package:kazumi/services/video_source/webview_video_source_service.dart';
 import '../models/media_item.dart';
 import '../widgets/home/home_design.dart';
 import '../services/anime/anime_source.dart';
+import 'source_picker_sheet.dart';
 
-/// 打开动漫播放页。[itemId] 是 anime:{subjectId}，[episode] 从 1 开始。
+/// 打开动漫播放页。[picked] 是用户在选源弹窗里选好的源与分集。
 Future<void> openAnimePlayer(
   BuildContext context, {
   required MediaItem item,
   required int episode,
+  required PickedSource picked,
 }) async {
   await Navigator.push<void>(
     context,
     MaterialPageRoute<void>(
-      builder: (_) => AnimePlayerPage(item: item, episode: episode),
+      builder: (_) => AnimePlayerPage(
+        item: item,
+        episode: episode,
+        picked: picked,
+      ),
     ),
   );
 }
@@ -42,10 +46,12 @@ class AnimePlayerPage extends StatefulWidget {
     super.key,
     required this.item,
     required this.episode,
+    required this.picked,
   });
 
   final MediaItem item;
   final int episode;
+  final PickedSource picked;
 
   @override
   State<AnimePlayerPage> createState() => _AnimePlayerPageState();
@@ -58,17 +64,33 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
 
   bool _resolving = true;
   String? _error;
-  List<Plugin> _pluginsWithResults = const [];
-  /// 每个源第一次搜索命中的详情 URL，避免加载线路时再搜一遍。
-  final Map<String, String> _sourceUrlByPlugin = {};
-  int _pluginIndex = 0;
-  List<Road> _roads = const [];
+  List<Road> get _roads => widget.picked.roads;
   int _roadIndex = 0;
   List<String> get _episodeUrls =>
       _roads.isEmpty ? const [] : (_roads[_roadIndex].data);
   int _episodeIndex = 0;
-  String _status = '正在搜索播放源…';
+  String _status = '正在解析播放地址…';
   StreamSubscription<String>? _errorSub;
+
+  // —— 补上的 Kazumi 功能状态 ——
+  double _rate = 1.0;
+  BoxFit _fit = BoxFit.contain;
+  bool _locked = false;
+  bool _showInfo = false;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  int _videoWidth = 0;
+  int _videoHeight = 0;
+  StreamSubscription<Duration>? _posSub;
+  StreamSubscription<Duration>? _durSub;
+  StreamSubscription<int?>? _widthSub;
+  StreamSubscription<int?>? _heightSub;
+  Timer? _sleepTimer;
+  int _sleepMinutes = 0;
+  StreamSubscription<String>? _noticeSub;
+
+  static const _rates = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+  static const _sleepOptions = [0, 10, 20, 30, 45, 60];
 
   @override
   void initState() {
@@ -78,14 +100,30 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
     _errorSub = _player.stream.error.listen((event) {
       if (mounted) setState(() => _error = '播放出错：' + event.toString());
     });
+    _posSub = _player.stream.position.listen((p) {
+      if (mounted) setState(() => _position = p);
+    });
+    _durSub = _player.stream.duration.listen((d) {
+      if (mounted) setState(() => _duration = d);
+    });
+    _widthSub = _player.stream.width.listen((w) {
+      if (mounted) setState(() => _videoWidth = w ?? 0);
+    });
+    _heightSub = _player.stream.height.listen((h) {
+      if (mounted) setState(() => _videoHeight = h ?? 0);
+    });
     _start();
   }
 
   @override
   void dispose() {
+    _sleepTimer?.cancel();
     _errorSub?.cancel();
+    _posSub?.cancel();
+    _durSub?.cancel();
+    _widthSub?.cancel();
+    _heightSub?.cancel();
     _resolver?.dispose();
-    // VideoController 没有 dispose(); media_kit 里它是随 Player 一起释放的。
     _player.dispose();
     super.dispose();
   }
@@ -94,88 +132,13 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
     setState(() {
       _resolving = true;
       _error = null;
-      _status = '正在搜索播放源…';
+      _roadIndex = 0;
+      _episodeIndex =
+          (widget.episode - 1).clamp(0, _episodeUrls.length - 1).toInt();
     });
-    try {
-      await KazumiBootstrap.ensureReady();
-      final plugins = KazumiBootstrap.plugins;
-      final keyword = widget.item.title;
-      // 逐个规则搜索，收集有结果的源。
-      final found = <Plugin>[];
-      for (final plugin in plugins.pluginList) {
-        try {
-          final result = await plugin.queryBangumi(keyword, shouldRethrow: true);
-          if (result.data.isNotEmpty) {
-            found.add(plugin);
-            _sourceUrlByPlugin[plugin.name] = result.data.first.src;
-          }
-        } catch (_) {}
-      }
-      if (found.isEmpty) {
-        if (!mounted) return;
-        setState(() {
-          _resolving = false;
-          _error = '没有找到可用的播放源。先去「我的 → 播放源」装几条规则。';
-        });
-        return;
-      }
-      if (!mounted) return;
-      setState(() {
-        _pluginsWithResults = found;
-        _pluginIndex = 0;
-      });
-      await _loadRoads(0);
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _resolving = false;
-        _error = '搜索播放源失败：' + e.toString();
-      });
-    }
+    await _playCurrent();
   }
 
-  /// 取某个源的分集线路。
-  Future<void> _loadRoads(int pluginIndex) async {
-    if (pluginIndex >= _pluginsWithResults.length) return;
-    setState(() {
-      _resolving = true;
-      _status = '正在读取分集列表…';
-    });
-    try {
-      final plugin = _pluginsWithResults[pluginIndex];
-      // 用第一次搜索时缓存的详情 URL，不再重复搜一遍。
-      final src = _sourceUrlByPlugin[plugin.name];
-      if (src == null || src.isEmpty) throw StateError('这个源没有详情地址');
-      final roads = await plugin.queryChapterRoads(src);
-      if (roads.isEmpty) throw StateError('这个源没有分集');
-      // 默认从传入的集数开始（减 1 转 0 基）。
-      final initial = (_roads.isEmpty ? widget.episode - 1 : _episodeIndex)
-          .clamp(0, roads.first.data.length - 1)
-          .toInt(); // int.clamp 返回 num，必须转 int 才能赋给 _episodeIndex
-      if (!mounted) return;
-      setState(() {
-        _pluginIndex = pluginIndex;
-        _roads = roads;
-        _roadIndex = 0;
-        _episodeIndex = initial < 0 ? 0 : initial;
-        _resolving = false;
-      });
-      await _playCurrent();
-    } catch (e) {
-      if (!mounted) return;
-      // 这条源失败就自动试下一条。
-      if (pluginIndex + 1 < _pluginsWithResults.length) {
-        await _loadRoads(pluginIndex + 1);
-      } else {
-        setState(() {
-          _resolving = false;
-          _error = '所有播放源都解析失败，换一部或稍后再试。';
-        });
-      }
-    }
-  }
-
-  /// 解析并播放当前分集。
   Future<void> _playCurrent() async {
     if (_episodeUrls.isEmpty) return;
     final url = _episodeUrls[_episodeIndex];
@@ -185,23 +148,19 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
       _error = null;
     });
     try {
-      final plugin = _pluginsWithResults[_pluginIndex];
+      final plugin = widget.picked.plugin;
       _resolver ??= WebViewVideoSourceService();
       final source = await _resolver!.resolve(
         plugin.buildFullUrl(url),
         useLegacyParser: plugin.useLegacyParser,
       );
       if (!mounted) return;
-      setState(() {
-        _resolving = false;
-      });
+      setState(() => _resolving = false);
       await _player.open(
-        Media(
-          source.url,
-          httpHeaders: plugin.buildHttpHeaders(),
-        ),
+        Media(source.url, httpHeaders: plugin.buildHttpHeaders()),
         play: true,
       );
+      await _player.setRate(_rate);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -214,6 +173,32 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
   void _pickEpisode(int index) {
     setState(() => _episodeIndex = index);
     _playCurrent();
+  }
+
+  void _setRate(double rate) {
+    setState(() => _rate = rate);
+    _player.setRate(rate);
+  }
+
+  void _skipIntro() {
+    // Kazumi 的跳过 OP 是固定前进 90 秒。
+    final target = _player.state.position + const Duration(seconds: 90);
+    _player.seek(target > _duration ? _duration : target);
+  }
+
+  void _setSleep(int minutes) {
+    _sleepTimer?.cancel();
+    setState(() => _sleepMinutes = minutes);
+    if (minutes == 0) return;
+    _sleepTimer = Timer(Duration(minutes: minutes), () {
+      _player.pause();
+      if (mounted) {
+        setState(() => _sleepMinutes = 0);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('定时关闭：已暂停播放')),
+        );
+      }
+    });
   }
 
   @override
@@ -231,24 +216,15 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
         backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
         actions: [
-          if (_pluginsWithResults.length > 1)
-            PopupMenuButton<int>(
-              icon: const Icon(Icons.playlist_play),
-              color: palette.surface,
-              onSelected: (i) => _loadRoads(i),
-              itemBuilder: (context) => [
-                for (var i = 0; i < _pluginsWithResults.length; i++)
-                  PopupMenuItem<int>(
-                    value: i,
-                    child: Text(
-                      _pluginsWithResults[i].name,
-                      style: TextStyle(
-                        color: i == _pluginIndex ? palette.accentText : null,
-                      ),
-                    ),
-                  ),
-              ],
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Center(
+              child: Text(
+                '源：' + widget.picked.plugin.name,
+                style: const TextStyle(color: Colors.white70, fontSize: 12),
+              ),
             ),
+          ),
         ],
       ),
       body: Column(
@@ -258,11 +234,8 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
             child: Stack(
               alignment: Alignment.center,
               children: [
-                // 不传 controls 就用 media_kit 默认控制条（播放/暂停/进度/全屏）。
-                Video(
-                  controller: _videoController,
-                  fit: BoxFit.contain,
-                ),
+                // 不传 controls 就用 media_kit 默认控制条。
+                Video(controller: _videoController, fit: _fit),
                 if (_resolving)
                   Container(
                     color: Colors.black.withValues(alpha: 0.6),
@@ -271,13 +244,9 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
                       children: [
                         const CircularProgressIndicator(),
                         const SizedBox(height: 12),
-                        Text(
-                          _status,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                          ),
-                        ),
+                        Text(_status,
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 13)),
                       ],
                     ),
                   ),
@@ -288,104 +257,177 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.error_outline, color: Colors.white, size: 32),
+                        const Icon(Icons.error_outline,
+                            color: Colors.white, size: 32),
                         const SizedBox(height: 8),
-                        Text(
-                          _error!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
+                        Text(_error!, textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12)),
                         const SizedBox(height: 12),
                         OutlinedButton(
                           onPressed: _start,
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white,
-                          ),
+                              foregroundColor: Colors.white),
                           child: const Text('重试'),
                         ),
                       ],
                     ),
                   ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              children: [
-                const Text(
-                  '选集',
-                  style: TextStyle(color: Colors.white, fontSize: 14),
-                ),
-                const Spacer(),
-                if (_roads.isNotEmpty && _roads.length > 1)
-                  DropdownButton<int>(
-                    value: _roadIndex,
-                    dropdownColor: palette.surface,
-                    style: TextStyle(color: palette.ink, fontSize: 12),
-                    underline: const SizedBox.shrink(),
-                    items: [
-                      for (var i = 0; i < _roads.length; i++)
-                        DropdownMenuItem<int>(
-                          value: i,
-                          child: Text(_roads[i].name),
-                        ),
-                    ],
-                    onChanged: (i) {
-                      if (i == null) return;
-                      setState(() {
-                        _roadIndex = i;
-                        _episodeIndex = 0;
-                      });
-                      _playCurrent();
-                    },
+                if (_showInfo && !_resolving)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      color: Colors.black54,
+                      child: Text(
+                        '${_duration.inMinutes}:${(_duration.inSeconds % 60).toString().padLeft(2, '0')} · '
+                        '${_videoWidth}x${_videoHeight} · ${_rate}x',
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 11),
+                      ),
+                    ),
                   ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: _episodeUrls.isEmpty
-                ? const Center(
-                    child: Text(
-                      '暂无分集',
-                      style: TextStyle(color: Colors.white54),
-                    ),
-                  )
-                : GridView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 5,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                      childAspectRatio: 1.4,
-                    ),
-                    itemCount: _episodeUrls.length,
-                    itemBuilder: (context, i) => GestureDetector(
-                      onTap: () => _pickEpisode(i),
+                if (_locked)
+                  Positioned.fill(
+                    child: GestureDetector(
+                      onTap: () => setState(() => _locked = false),
                       child: Container(
-                        decoration: BoxDecoration(
-                          color: i == _episodeIndex
-                              ? palette.accentText
-                              : Colors.white12,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
+                        color: Colors.transparent,
                         alignment: Alignment.center,
-                        child: Text(
-                          (i + 1).toString(),
-                          style: TextStyle(
-                            color: i == _episodeIndex ? Colors.white : Colors.white70,
-                            fontSize: 13,
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.black54,
+                            borderRadius: BorderRadius.circular(20),
                           ),
+                          child: const Icon(Icons.lock, color: Colors.white),
                         ),
                       ),
                     ),
                   ),
+              ],
+            ),
           ),
+          // 工具条（锁屏时隐藏）。
+          if (!_locked)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(
+                children: [
+                  _toolButton(Icons.speed_rounded, '倍速 ${_rate}x', () {
+                    final i = _rates.indexOf(_rate);
+                    _setRate(_rates[(i + 1) % _rates.length]);
+                  }),
+                  _toolButton(Icons.aspect_ratio_rounded, '画幅', () {
+                    setState(() => _fit =
+                        _fit == BoxFit.contain ? BoxFit.cover : BoxFit.contain);
+                  }),
+                  _toolButton(Icons.skip_forward, '跳过片头', _skipIntro),
+                  _toolButton(Icons.timer,
+                      _sleepMinutes == 0 ? '定时关闭' : '定时 ${_sleepMinutes}分',
+                      () {
+                    final i = _sleepOptions.indexOf(_sleepMinutes);
+                    _setSleep(_sleepOptions[(i + 1) % _sleepOptions.length]);
+                  }),
+                  _toolButton(Icons.info_outline, '播放信息',
+                      () => setState(() => _showInfo = !_showInfo)),
+                  _toolButton(Icons.lock, '锁屏',
+                      () => setState(() => _locked = true)),
+                ],
+              ),
+            ),
+          if (!_locked) ...[
+            const SizedBox(height: 4),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  const Text('选集',
+                      style: TextStyle(color: Colors.white, fontSize: 14)),
+                  const Spacer(),
+                  if (_roads.isNotEmpty && _roads.length > 1)
+                    DropdownButton<int>(
+                      value: _roadIndex,
+                      dropdownColor: palette.surface,
+                      style: TextStyle(color: palette.ink, fontSize: 12),
+                      underline: const SizedBox.shrink(),
+                      items: [
+                        for (var i = 0; i < _roads.length; i++)
+                          DropdownMenuItem<int>(
+                            value: i,
+                            child: Text(_roads[i].name),
+                          ),
+                      ],
+                      onChanged: (i) {
+                        if (i == null) return;
+                        setState(() {
+                          _roadIndex = i;
+                          _episodeIndex = 0;
+                        });
+                        _playCurrent();
+                      },
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _episodeUrls.isEmpty
+                  ? const Center(
+                      child: Text('暂无分集',
+                          style: TextStyle(color: Colors.white54)),
+                    )
+                  : GridView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 5,
+                        mainAxisSpacing: 8,
+                        crossAxisSpacing: 8,
+                        childAspectRatio: 1.4,
+                      ),
+                      itemCount: _episodeUrls.length,
+                      itemBuilder: (context, i) => GestureDetector(
+                        onTap: () => _pickEpisode(i),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: i == _episodeIndex
+                                ? palette.accentText
+                                : Colors.white12,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            (i + 1).toString(),
+                            style: TextStyle(
+                              color: i == _episodeIndex
+                                  ? Colors.white
+                                  : Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+            ),
+          ],
         ],
       ),
     );
   }
+
+  Widget _toolButton(IconData icon, String label, VoidCallback onTap) => Padding(
+    padding: const EdgeInsets.only(right: 8),
+    child: ActionChip(
+      onPressed: onTap,
+      avatar: Icon(icon, size: 16, color: Colors.white),
+      label: Text(label,
+          style: const TextStyle(color: Colors.white, fontSize: 12)),
+      side: BorderSide.none,
+      color: Colors.white12,
+    ),
+  );
 }
