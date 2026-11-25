@@ -68,5 +68,11 @@ void main() {
     // ignore: avoid_print
     print('===== END =====');
     expect(error, isNull, reason: '规则管理页构建时抛异常（release 下会是一整块灰）');
+
+    // 页面一进来就会去拉规则仓库，EchAdapter 里有 24s 的 timeout Timer。
+    // 不把它走完，postTest 的 '!timersPending' 断言会把这个测试判失败
+    // —— 那是收尾噪音，不是页面问题。
+    await tester.pump(const Duration(seconds: 30));
+    tester.takeException(); // 超时异常（没网就是必然的），不看
   });
 }
