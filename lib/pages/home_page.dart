@@ -19,6 +19,8 @@ import '../services/shell_visibility.dart';
 import '../services/home_continue_preferences.dart';
 import '../services/home_page_affinity.dart';
 import '../services/library_store.dart';
+import '../services/book_source_preference.dart';
+import '../services/lightnovel/lightnovel_loaders.dart';
 import '../services/wenku8/wenku8_loaders.dart';
 import '../widgets/home/classic_home_feed_states.dart';
 import '../widgets/home/classic_home_skeleton.dart';
@@ -949,7 +951,14 @@ class _HomePageState extends ConsumerState<HomePage> {
       context,
       SearchRoute.open<void>(
         context,
-        builder: (_) => SearchPage(searchLoader: wenku8SearchTabs),
+        builder: (_) => SearchPage(
+                      searchLoader: (String query, {required int tabType, required int offset}) {
+                        final src = BookSourcePreference.instance.source.value;
+                        return src == BookSource.lightnovel
+                            ? lightNovelSearchTabs(query, tabType: tabType, offset: offset)
+                            : wenku8SearchTabs(query, tabType: tabType, offset: offset);
+                      },
+                    ),
       ),
     );
   }

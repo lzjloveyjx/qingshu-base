@@ -6,6 +6,8 @@ import '../models/home_cell.dart';
 import '../models/media_item.dart';
 import '../services/api_client.dart';
 import '../services/app_log.dart';
+import '../services/book_source_preference.dart';
+import '../services/lightnovel/lightnovel_loaders.dart';
 import '../services/wenku8/wenku8_loaders.dart';
 import '../services/frame_stats.dart';
 import '../services/backend_transport.dart';
@@ -1552,8 +1554,31 @@ final homeProvider = NotifierProvider<HomeNotifier, HomeState>(
   () => HomeNotifier(
     usesLocalTabs: true,
     tabs: kWenku8HomeTabs,
-    indexedHomepageLoader: wenku8HomepageLoader,
-    searchLoader: wenku8HomeSearchTabs,
+    // 按当前书源分派：来源只影响「去哪找书」，书架与进度完全共享。
+    indexedHomepageLoader: ({int tabType = 2, int offset = 0, String? sessionId, int? tabIndex, int? lastTabIndex}) {
+      final src = BookSourcePreference.instance.source.value;
+      return src == BookSource.lightnovel
+          ? lightNovelHomepageLoader(
+              tabType: tabType,
+              offset: offset,
+              sessionId: sessionId,
+              tabIndex: tabIndex,
+              lastTabIndex: lastTabIndex,
+            )
+          : wenku8HomepageLoader(
+              tabType: tabType,
+              offset: offset,
+              sessionId: sessionId,
+              tabIndex: tabIndex,
+              lastTabIndex: lastTabIndex,
+            );
+    },
+    searchLoader: (String query, {int page = 1}) {
+      final src = BookSourcePreference.instance.source.value;
+      return src == BookSource.lightnovel
+          ? lightNovelHomeSearchTabs(query, page: page)
+          : wenku8HomeSearchTabs(query, page: page);
+    },
     // 听书/漫画/漫剧当前没有可用数据源（番茄后端已移除）。
     // 返回空列表而不是调后端或抛错，让这些分类显示「暂无内容」而不是错误页。
     audioSearchLoader: ({int offset = 0}) async => const <SearchTab>[],
