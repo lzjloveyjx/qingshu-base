@@ -153,7 +153,8 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
       if (roads.isEmpty) throw StateError('这个源没有分集');
       // 默认从传入的集数开始（减 1 转 0 基）。
       final initial = (_roads.isEmpty ? widget.episode - 1 : _episodeIndex)
-          .clamp(0, roads.first.data.length - 1);
+          .clamp(0, roads.first.data.length - 1)
+          .toInt(); // int.clamp 返回 num，必须转 int 才能赋给 _episodeIndex
       if (!mounted) return;
       setState(() {
         _pluginIndex = pluginIndex;
