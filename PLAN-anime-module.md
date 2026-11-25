@@ -360,6 +360,28 @@ Kazumi 本身就有 `BangumiAcceleration`（direct / ech / mirror）三档，默
 原始 Kazumi 关键源码已下载到 D:/小肥鱼工作区/07-影音App/qingshu-apk/upstream-kazumi/
 （文件名把 / 换成 __，如 lib__pages__plugin_editor__plugin_view_page.dart），
 共 15 个文件，是 Predidit/Kazumi main 分支快照，可随时对照。
+### 2026-11-26 06:40 v2.1.0：修「规则仓库空白 / 整页灰块」
+
+用户实测 v2.0.0 反馈：进「规则管理」看到一大块灰色，规则仓库全空。
+
+**三个根因（都已在 80d8651 修复）**：
+
+1. `GeneralEmptyState` / `GeneralErrorWidget` 内部套了 `SingleChildScrollView`，
+   被放进 sliver（无界高度）时抛「Vertical viewport was given unbounded height」，
+   **release 构建把出错子树渲染成没有文字的灰块** —— 就是截图里那块。
+   空态/错误态不需要滚动，去掉滚动层即可。
+2. `SysAppBar` 返回按钮用 `context.maybePop()`（flutter_modular 扩展），
+   主壳是 Riverpod 没有 ModularApp，一渲染就抛异常（同样变灰块）。
+   改 `Navigator.maybePop(context)`，删 modular import。
+3. `RulesRepoClient` 原来只试一个镜像，该镜像在用户网络下挂掉就整页空白。
+   改成按「当前设置 -> 其余镜像」依次回退，任一成功即返回。
+
+**教训**：release 模式下的「无文字灰块」几乎都是构建异常被 ErrorWidget 吞掉。
+以后开新页面先检查：sliver 里的子项不能有无界高度的滚动容器；
+不能调用 flutter_modular 的 context 扩展（pushNamed / pop / maybePop）。
+
+另：这次 push 后的构建因 Gradle 下载 Maven 依赖断网失败（基础设施，不是代码），
+用 workflow_dispatch 重跑即通过。
 ### 重新开工第一件事
 
 看 `bbc9b4d` 的 Build APK 结果（workflow `build-apk.yml`）。
