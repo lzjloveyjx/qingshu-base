@@ -6,7 +6,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
-import 'package:flutter_modular/flutter_modular.dart';
 import 'package:kazumi/bean/card/rule_card.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
@@ -14,6 +13,9 @@ import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
 import 'package:kazumi/bean/widget/empty_state_widget.dart';
 import 'package:kazumi/bean/widget/state_presentation.dart';
+import 'package:kazumi/pages/plugin_editor/plugin_editor_page.dart';
+import 'package:kazumi/pages/plugin_editor/plugin_shop_page.dart';
+import 'package:kazumi/pages/plugin_editor/plugin_test_page.dart';
 import 'package:kazumi/pages/plugin_editor/plugin_update_actions.dart';
 import 'package:kazumi/pages/plugin_editor/rule_dialogs.dart';
 import 'package:kazumi/pages/plugin_editor/rule_management_widgets.dart';
@@ -74,15 +76,38 @@ class _PluginViewPageState extends State<PluginViewPage> {
     }
   }
 
+  // 青枢：Kazumi 原来用 flutter_modular 的 context.pushNamed 跳子页，
+  // 主壳是 Riverpod 没有 ModularApp，这些跳转会失效。换成 Navigator.push，
+  // 并把 controller 从状态里带过去（KazumiBootstrap 启动时已装配）。
+  void _openShop() => Navigator.push<void>(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => PluginShopPage(controller: _controller),
+        ),
+      );
+
+  void _openEditor(Plugin plugin) => Navigator.push<void>(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => PluginEditorPage(plugin: plugin, controller: _controller),
+        ),
+      );
+
+  void _openTest(Plugin plugin) => Navigator.push<void>(
+        context,
+        MaterialPageRoute<void>(
+          builder: (_) => PluginTestPage(plugin: plugin),
+        ),
+      );
+
   Future<void> _add() async {
     final source = await showRuleAddDialog(context);
     if (!mounted || source == null) return;
     switch (source) {
       case RuleAddSource.catalog:
-        context.pushNamed('/settings/plugin/shop');
+        _openShop();
       case RuleAddSource.create:
-        context.pushNamed('/settings/plugin/editor',
-            arguments: Plugin.fromTemplate());
+        _openEditor(Plugin.fromTemplate());
       case RuleAddSource.clipboard:
         String? initialValue;
         try {
@@ -268,8 +293,7 @@ class _PluginViewPageState extends State<PluginViewPage> {
                             FilledButton.tonalIcon(
                                 style: FilledButton.styleFrom(
                                     minimumSize: const Size(120, 48)),
-                                onPressed: () =>
-                                    context.pushNamed('/settings/plugin/shop'),
+                                onPressed: _openShop,
                                 icon: const Icon(Icons.travel_explore_rounded),
                                 label: const Text('规则仓库')),
                           ],
@@ -382,8 +406,7 @@ class _PluginViewPageState extends State<PluginViewPage> {
                           if (_selecting) {
                             _toggleSelection(plugin.name);
                           } else {
-                            context.pushNamed('/settings/plugin/editor',
-                                arguments: plugin);
+                            _openEditor(plugin);
                           }
                         },
                         onLongPress: () => setState(() {
@@ -453,12 +476,10 @@ class _PluginViewPageState extends State<PluginViewPage> {
             icon: const Icon(Icons.more_horiz_rounded)),
         menuChildren: [
           KazumiMenuItem(
-              onPressed: () => context.pushNamed('/settings/plugin/editor',
-                  arguments: plugin),
+              onPressed: () => _openEditor(plugin),
               label: '编辑规则'),
           KazumiMenuItem(
-              onPressed: () =>
-                  context.pushNamed('/settings/plugin/test', arguments: plugin),
+              onPressed: () => _openTest(plugin),
               label: '测试规则'),
           KazumiMenuItem(
               onPressed: _updating ? null : () => _updateOne(plugin),

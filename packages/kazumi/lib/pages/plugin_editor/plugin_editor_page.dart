@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/pages/plugin_editor/plugin_test_page.dart';
 
 import 'package:kazumi/bean/settings/settings_detail_scaffold.dart';
 import 'package:kazumi/bean/widget/loading_indicator.dart';
@@ -406,7 +406,12 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
   void _testRule() {
     final editedPlugin = _tryBuildEditedPlugin();
     if (editedPlugin == null) return;
-    context.pushNamed('/settings/plugin/test', arguments: editedPlugin);
+    Navigator.push<void>(
+      context,
+      MaterialPageRoute<void>(
+        builder: (_) => PluginTestPage(plugin: editedPlugin),
+      ),
+    );
   }
 
   Future<void> _save() async {
