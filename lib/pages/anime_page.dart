@@ -264,11 +264,7 @@ class _AnimePageState extends State<AnimePage> {
         delegate: SliverChildBuilderDelegate(
           (context, index) {
             final item = items[index];
-            return HomeMediaCard(
-              item: item,
-              cacheWidth: 360,
-              onTap: () => _open(item),
-            );
+            return HomeMediaCard(item: item, onTap: () => _open(item));
           },
           childCount: items.length,
         ),
