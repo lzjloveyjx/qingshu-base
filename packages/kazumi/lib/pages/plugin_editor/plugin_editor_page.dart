@@ -424,7 +424,7 @@ class _PluginEditorPageState extends State<PluginEditorPage> {
     });
     try {
       await pluginsController.updatePlugin(editedPlugin);
-      if (mounted) context.pop();
+      if (mounted && Navigator.canPop(context)) Navigator.of(context).pop();
     } catch (error) {
       _showEditorError(error);
     } finally {

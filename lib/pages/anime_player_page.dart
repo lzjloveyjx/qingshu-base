@@ -325,7 +325,7 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
                     setState(() => _fit =
                         _fit == BoxFit.contain ? BoxFit.cover : BoxFit.contain);
                   }),
-                  _toolButton(Icons.skip_forward, '跳过片头', _skipIntro),
+                  _toolButton(Icons.fast_forward, '跳过片头', _skipIntro),
                   _toolButton(Icons.timer,
                       _sleepMinutes == 0 ? '定时关闭' : '定时 ${_sleepMinutes}分',
                       () {
@@ -426,8 +426,6 @@ class _AnimePlayerPageState extends State<AnimePlayerPage> {
       avatar: Icon(icon, size: 16, color: Colors.white),
       label: Text(label,
           style: const TextStyle(color: Colors.white, fontSize: 12)),
-      side: BorderSide.none,
-      color: Colors.white12,
     ),
   );
 }
