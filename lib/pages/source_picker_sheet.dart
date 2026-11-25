@@ -18,6 +18,7 @@ import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/services/plugin/rule_engine_models.dart'
     show CaptchaRequiredException, NoResultException, RuleCancelToken;
 
+import '../models/media_item.dart';
 import '../services/anime/anime_source.dart';
 import '../widgets/home/home_design.dart';
 
