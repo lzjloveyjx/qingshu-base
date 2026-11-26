@@ -413,17 +413,20 @@ abstract class _PlayerPlaybackController with Store {
         configuration: VideoControllerConfiguration(
           vo: videoRenderer,
           enableHardwareAcceleration: hAenable,
+          // 【青枢】这两行是 Kazumi 有意为之的兼容性设置，不能删。
+          //
+          // enableAndroidSurfaceProducer=false 让 Android 走保守的
+          // AndroidExternalTexture 渲染路径。关掉 SurfaceProducer 是因为
+          // 它在不少机型上渲染不出画面（mpv 打开了 URL、时长却是 00:00、
+          // 日志无报错）。androidAttachSurfaceAfterVideoParameters=false
+          // 与它配套：先建 surface，不等视频参数。
+          //
+          // 前提是依赖必须换成 Predidit/media-kit 分支 —— pub.dev 的
+          // media_kit_video 2.0.1 根本没有这个开关（VideoOutput.java 里
+          // 直接 createSurfaceProducer）。见 pubspec.yaml 的说明。
+          enableAndroidSurfaceProducer: false,
           hwdec: hAenable ? hardwareDecoder : 'no',
-          // 青枢：这里不能写死 false。Kazumi 上游用的是 Predidit 的
-          // media-kit 分支，它的 VideoControllerConfiguration 有
-          //   enableAndroidSurfaceProducer（默认 true）
-          //   androidAttachSurfaceAfterVideoParameters（默认：vo==gpu 时 true）
-          // 两个开关，且 Kazumi 显式传 false 配合「先建 surface 再等参数」
-          // 的老路径。主壳用的是 pub.dev 的 media_kit_video 2.0.1，只有
-          // SurfaceProducer 一条路（VideoOutput.java 直接 createSurfaceProducer），
-          // 没有那个开关。硬套 false 会让 mpv 等一份永远不会到来的视频参数，
-          // 表现为播放器左黑右灰、进度 00:00 / 00:00。
-          // 交给插件按 vo 自行决定（gpu -> true）即可。
+          androidAttachSurfaceAfterVideoParameters: false,
         ),
       );
       player.setPlaylistMode(PlaylistMode.none);
