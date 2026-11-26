@@ -293,7 +293,9 @@ abstract class _PlayerPlaybackController with Store {
           bufferSize: cachePolicy.bufferSize,
           osc: false,
           logLevel: MPVLogLevel.values[debug.playerLogLevel],
-          adBlocker: adBlockerEnabled,
+          // 青枢：Kazumi 用的 media-kit 是 Predidit 的分支（1.1.11 + 私有补丁），
+          // 主壳用的是 pub.dev 的 1.2.6，没有 adBlocker 参数。广告屏蔽对
+          // 规则源播放本来就没用（视频直链由规则解析），去掉即可。
         ),
       ),
     );
@@ -411,7 +413,8 @@ abstract class _PlayerPlaybackController with Store {
         configuration: VideoControllerConfiguration(
           vo: videoRenderer,
           enableHardwareAcceleration: hAenable,
-          enableAndroidSurfaceProducer: false,
+          // 青枢：同上，enableAndroidSurfaceProducer 是分支私有参数，
+          // 1.2.6 没有这个开关（默认就不启用），删掉保持默认行为。
           hwdec: hAenable ? hardwareDecoder : 'no',
           androidAttachSurfaceAfterVideoParameters: false,
         ),
@@ -635,6 +638,8 @@ abstract class _PlayerPlaybackController with Store {
       return null;
     }
     // Encode the captured frame natively; PlayerState dimensions may be stale.
-    return player.safeScreenshot(format: 'image/png');
+    // 青枢：safeScreenshot 是 Kazumi 分支加的（带初始化等待），
+    // pub.dev 的 1.2.6 只有 screenshot()。调用方已经判过 mediaPlayer 非空。
+    return player.screenshot(format: 'image/png');
   }
 }

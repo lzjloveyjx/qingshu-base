@@ -134,7 +134,12 @@ class _VideoDetailsSheetState extends State<_VideoDetailsSheet>
               const SizedBox(height: 16),
               Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Expanded(
-                    child: _metric(context, '视频码率', debug.playerVideoBitrate)),
+                    child: _metric(
+                        context,
+                        '视频码率',
+                        debug.playerVideoBitrate.isEmpty
+                            ? '未知'
+                            : debug.playerVideoBitrate)),
                 const SizedBox(width: 16),
                 Expanded(
                     child: _metric(context, '音频码率', debug.playerAudioBitrate)),

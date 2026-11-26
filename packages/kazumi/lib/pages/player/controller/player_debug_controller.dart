@@ -44,7 +44,8 @@ abstract class _PlayerDebugController with Store {
   StreamSubscription<Playlist>? playerPlaylistSubscription;
   StreamSubscription<Track>? playerTracksSubscription;
   StreamSubscription<double?>? playerAudioBitrateSubscription;
-  StreamSubscription<double?>? playerVideoBitrateSubscription;
+  // 青枢：订阅的是 videoParams（见下方），不是分支私有的 videoBitrate 流。
+  StreamSubscription<VideoParams>? playerVideoBitrateSubscription;
 
   Future<void> setup(
     Player player, {
@@ -97,8 +98,12 @@ abstract class _PlayerDebugController with Store {
     });
     await playerVideoBitrateSubscription?.cancel();
     if (!isCurrentPlayer(player)) return;
-    playerVideoBitrateSubscription = player.stream.videoBitrate.listen((event) {
-      playerVideoBitrate = event.toString();
+    // 青枢：Kazumi 依赖的 media-kit 分支多了 videoBitrate 流，pub.dev 的
+    // 1.2.6 没有。这里用 videoParams 的码率字段（如果有）顶替，没有就留空。
+    playerVideoBitrateSubscription =
+        player.stream.videoParams.listen((event) {
+      final bitrate = (event as dynamic).bitrate;
+      playerVideoBitrate = bitrate == null ? '' : bitrate.toString();
     });
   }
 
