@@ -140,6 +140,14 @@ flutter:
     # docs/research/short-drama-decompile-comparison-20260921.md §8）。
     - assets/images/drama/
     - assets/images/reader/
+    # Kazumi 播放器/番剧页用的零散图片（播放页倍速按钮、弹幕开关、
+    # 加载占位、无封面占位）。原先在 packages/kazumi/assets 下，
+    # 嵌入主壳后整个目录被移除，这些引用就 404 了。
+    - assets/images/forward_80.png
+    - assets/images/danmaku_off.svg
+    - assets/images/danmaku_setting.svg
+    - assets/images/loading.png
+    - assets/images/noface.jpeg
     # 「上滑查看更多视频」的官方箭头动画（`more_wonderful_series_up_arrow.json`），
     # 原样复制、仅把填充色改为白色——官方运行时用 LottieValueCallback 强制
     # `@color/al`=#ffffffff（见同文档 §19）。
