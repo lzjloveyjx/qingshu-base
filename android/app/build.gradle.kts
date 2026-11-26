@@ -108,13 +108,17 @@ android {
                 storeFile = file(keystorePath)
             }
         }
-        // 【青枢】仓库里带一份固定的 release 密钥。
+        // 【青枢】签名材料一律从外部注入，仓库里不留任何密钥或口令。
+        //
+        // 取值顺序（见上方 signingValue）:
+        //   1. android/keystore.properties   （本机构建，git-ignored）
+        //   2. 环境变量 RELEASE_KEYSTORE_FILE / RELEASE_STORE_PASSWORD
+        //      / RELEASE_KEY_ALIAS / RELEASE_KEY_PASSWORD  （CI 用 GitHub Secrets）
         //
         // 上游的设计是「没配密钥就产出未签名包」，那对分发是致命的：
-        // 未签名的 APK 在任何手机上都会报「解析软件包时出现问题 /
-        // packageInfo is null」，根本装不上。这里改成仓库内固定密钥兜底，
-        // CI 和本地都能出可直接安装的包。
-        val bundledKeystore = file("qingshu-release.keystore")
+        // 未签名的 APK 在任何手机上都会报「解析软件包时出现问题」，
+        // 根本装不上。所以这里在缺配置时直接让构建失败并说明怎么配，
+        // 而不是悄悄产出装不上的包。
         if (hasReleaseSigning) {
             create("release") {
                 storeFile = rootProject.file(releaseStoreFile!!)
@@ -124,15 +128,6 @@ android {
                 // minSdk is 24, so V2 alone installs on every supported device;
                 // V1 stays enabled because some OEM installers on Android 7
                 // still verify it.
-                enableV1Signing = true
-                enableV2Signing = true
-            }
-        } else if (bundledKeystore.exists()) {
-            create("release") {
-                storeFile = bundledKeystore
-                storePassword = "REDACTED_KEYSTORE_PASSWORD"
-                keyAlias = "qingshu"
-                keyPassword = "REDACTED_KEYSTORE_PASSWORD"
                 enableV1Signing = true
                 enableV2Signing = true
             }
@@ -155,13 +150,23 @@ android {
             // keep the debug key so `flutter run` and overwrite-installing a
             // local test build keep working. A package signed by the older test
             // key cannot be overwritten by these -- it must be uninstalled.
-            // 【青枢】只要 signingConfigs 里存在 release 配置就用它。
-            // 上游只在 hasReleaseSigning（CI 注入的密钥）为真时才挂签名，
-            // 否则 release 变体没有任何 signingConfig，产出的是未签名包 ——
-            // 手机上会报「解析软件包时出现问题 / packageInfo is null」。
-            // 现在仓库自带密钥，signingConfigs 里一定有 release，必须挂上。
-            signingConfig = signingConfigs.findByName("release")
-                ?: signingConfigs.getByName("debug")
+            // 【青枢】必须有 release 签名，绝不退回 debug key。
+            //
+            // 用 debug key 签的 release 包有两个问题：换机器/换 CI 就换密钥，
+            // 用户的旧包装不上去；而且 debug key 是公开的，等于谁都能伪造。
+            // 所以缺签名材料时让构建直接失败，附带配置说明，而不是产出
+            // 一个要么装不上、要么能被冒充的包。
+            val releaseSigning = signingConfigs.findByName("release")
+            if (releaseSigning == null) {
+                throw GradleException(
+                    "缺少 release 签名材料。本机构建：在 android/keystore.properties " +
+                        "填 storeFile/storePassword/keyAlias/keyPassword；" +
+                        "CI：配 RELEASE_KEYSTORE_FILE / RELEASE_STORE_PASSWORD / " +
+                        "RELEASE_KEY_ALIAS / RELEASE_KEY_PASSWORD 四个 Secrets。" +
+                        "（密钥绝不入库，见 docs/release-signing.md）"
+                )
+            }
+            signingConfig = releaseSigning
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(
