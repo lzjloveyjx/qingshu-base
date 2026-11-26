@@ -82,11 +82,34 @@ class AppLog with WidgetsBindingObserver {
     final previousError = FlutterError.onError;
     _previousOnError = previousError;
     FlutterError.onError = (FlutterErrorDetails details) {
-      _emit(LogLevel.error, 'framework', details.toString());
+      // FlutterErrorDetails 没有重写 toString()，直接 toString() 只会得到
+      // 字符串 "Instance of 'FlutterErrorDetails'" —— 真错误信息全丢了。
+      // 这里把 exception / stack / context 摊开写，日志页才能看出问题。
+      _emit(
+        LogLevel.error,
+        "framework",
+        _formatErrorDetails(details),
+      );
       previousError?.call(details);
     };
 
     _attachLifecycle();
+  }
+
+  /// 把 [FlutterErrorDetails] 摊成可读文本（它本身没有重写 toString）。
+  static String _formatErrorDetails(FlutterErrorDetails details) {
+    final buffer = StringBuffer();
+    buffer.writeln(details.exceptionAsString());
+    final context = details.context;
+    if (context != null) buffer.writeln("  context: $context");
+    final library = details.library;
+    if (library != null) buffer.writeln("  library: $library");
+    final stack = details.stack;
+    if (stack != null) {
+      buffer.writeln("  stack:");
+      buffer.writeln(stack.toString().trimRight());
+    }
+    return buffer.toString().trimRight();
   }
 
   /// 还原被接管的 [debugPrint] 与 [FlutterError.onError]。

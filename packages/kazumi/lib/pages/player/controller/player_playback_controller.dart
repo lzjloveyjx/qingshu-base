@@ -413,10 +413,17 @@ abstract class _PlayerPlaybackController with Store {
         configuration: VideoControllerConfiguration(
           vo: videoRenderer,
           enableHardwareAcceleration: hAenable,
-          // 青枢：同上，enableAndroidSurfaceProducer 是分支私有参数，
-          // 1.2.6 没有这个开关（默认就不启用），删掉保持默认行为。
           hwdec: hAenable ? hardwareDecoder : 'no',
-          androidAttachSurfaceAfterVideoParameters: false,
+          // 青枢：这里不能写死 false。Kazumi 上游用的是 Predidit 的
+          // media-kit 分支，它的 VideoControllerConfiguration 有
+          //   enableAndroidSurfaceProducer（默认 true）
+          //   androidAttachSurfaceAfterVideoParameters（默认：vo==gpu 时 true）
+          // 两个开关，且 Kazumi 显式传 false 配合「先建 surface 再等参数」
+          // 的老路径。主壳用的是 pub.dev 的 media_kit_video 2.0.1，只有
+          // SurfaceProducer 一条路（VideoOutput.java 直接 createSurfaceProducer），
+          // 没有那个开关。硬套 false 会让 mpv 等一份永远不会到来的视频参数，
+          // 表现为播放器左黑右灰、进度 00:00 / 00:00。
+          // 交给插件按 vo 自行决定（gpu -> true）即可。
         ),
       );
       player.setPlaylistMode(PlaylistMode.none);

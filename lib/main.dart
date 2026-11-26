@@ -125,6 +125,11 @@ Future<void> _prepareRuntime() async {
   // [main] 的 runZonedGuarded 捕获；文件持久化异步开启，失败只退回内存模式。
   AppLog.instance.install();
   unawaited(AppLog.instance.startPersistence());
+  // release 构建里 Flutter 用 RenderErrorBox 把出错的子树画成一块纯灰
+  // (0xF0C0C0C0)，既没有文字也不进日志 —— 「规则管理页灰块」和「播放器
+  // 左黑右灰」都是这么来的，排查全靠猜。换成能显示异常类型的版本。
+  ErrorWidget.builder = (FlutterErrorDetails details) =>
+      _ErrorPlaceholder(message: details.exceptionAsString());
   // 帧耗时采样（debug/profile）：真机上唯一能拿到 UI/raster 拆分的手段。
   // release 里 install() 直接返回，不产生任何开销。
   FrameStats.install();
@@ -1164,6 +1169,36 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// release 下的错误占位：替代 Flutter 默认的纯灰块（RenderErrorBox）。
+///
+/// 默认实现把出错子树画成 0xF0C0C0C0 的实心方块，没有任何文字。青枢是自用
+/// 应用，定位问题比好看重要得多，所以这里直接把异常类型画出来。
+class _ErrorPlaceholder extends StatelessWidget {
+  const _ErrorPlaceholder({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: const Color(0xF0C0C0C0),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(16),
+      child: Text(
+        '界面渲染出错: ' + message,
+        textAlign: TextAlign.center,
+        maxLines: 8,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Color(0xFF3A0000),
+          fontSize: 12,
+          height: 1.4,
         ),
       ),
     );
