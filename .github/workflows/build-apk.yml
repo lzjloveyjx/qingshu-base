@@ -71,6 +71,23 @@ jobs:
           echo "build=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "resolved: $NAME+${GITHUB_RUN_NUMBER}"
 
+      # ---- Rust 后端核心 -------------------------------------------------
+      # libfqapi_core.so 是整个后端（番剧源/规则/同步）的依赖，缺了它
+      # BackendService 起不来，运行日志里会刷
+      # "Failed to load dynamic library libfqapi_core.so"。
+      #
+      # 这个 workflow 早期不编 Rust，等于一直在发没有后端的包。
+      # 现在补上，与 android-apk.yml 用同一份构建脚本。
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
       - name: Install dependencies
         run: flutter pub get
 
@@ -108,6 +125,55 @@ jobs:
             echo "::error::补丁未生效，仍存在 proguard-android.txt"
             exit 1
           fi
+
+      # 装 NDK：scripts/build_rust_backend.sh 要求 pinned 版本，
+      # 缺失时它直接报错而不是退回最新版（避免工具链悄悄漂移）。
+      - name: Install Android NDK
+        run: |
+          set -euo pipefail
+          NDK_VERSION="28.2.13676358"
+          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          if [ ! -d "$SDK_ROOT/ndk/$NDK_VERSION" ]; then
+            yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+              "ndk;$NDK_VERSION" >/dev/null
+          fi
+          echo "ANDROID_NDK_HOME=$SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+
+      - name: Compile the Rust core for Android
+        run: bash scripts/build_rust_backend.sh --skip-codegen
+
+      - name: Verify the Rust core libraries
+        run: |
+          set -euo pipefail
+          for abi in arm64-v8a armeabi-v7a; do
+            so="android/app/src/main/jniLibs/$abi/libfqapi_core.so"
+            test -s "$so" || { echo "::error::$so 缺失"; exit 1; }
+            echo "$abi: $(stat -c%s "$so") 字节"
+          done
+
+      # 签名材料从 Secrets 注入，仓库里不留密钥。缺 Secrets 时下面这步
+      # 会跳过，最终产出的包未签名 —— 但 build.gradle.kts 会直接让
+      # release 构建失败，所以不会出现"发出去却装不上"的包。
+      - name: Restore release signing identity
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::warning::未配置 RELEASE_KEYSTORE_BASE64，release 构建将失败（这是有意的）"
+            exit 0
+          fi
+          mkdir -p android
+          printf "%s" "$KEYSTORE_BASE64" | base64 -d > android/app/qingshu-release.keystore
+          {
+            echo "storeFile=app/qingshu-release.keystore"
+            echo "storePassword=$STORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > android/keystore.properties
 
       - name: Build APK
         run: |
