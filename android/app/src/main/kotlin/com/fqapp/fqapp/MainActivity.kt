@@ -1,12 +1,20 @@
 package com.fqapp.fqapp
 
 import android.view.KeyEvent
-import io.flutter.embedding.android.FlutterActivity
+import com.ryanheise.audioservice.AudioServiceActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterShellArgs
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+// 【青枢】必须继承 AudioServiceActivity 而不是 FlutterActivity。
+// audio_service 0.18 用一个共享 FlutterEngine 来跑后台音频/播放服务；
+// 如果启动 Activity 自己 new 一个引擎，AudioService.init() 会抛
+// "The Activity class declared in your AndroidManifest.xml is wrong or
+//  has not provided the correct FlutterEngine"。
+// AudioServiceActivity 只重写了 provideFlutterEngine（返回共享引擎），
+// 其余行为与 FlutterActivity 完全一致，所以本类的所有自定义插件注册、
+// 音量键拦截、生命周期回调都不受影响。
+class MainActivity : AudioServiceActivity() {
     // 音量键翻页桥。Dart 侧在阅读页且开启“音量键翻页”时通过 setEnabled(true)
     // 通知原生拦截音量键，原生 dispatchKeyEvent 吃掉按键（系统音量不再变化）并通过
     // volumeKey 回调让 Dart 翻页。该方案在原生层拦截，不受 Flutter 生命周期

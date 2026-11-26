@@ -75,3 +75,18 @@
 # The SMB sync connection uses NTLM on Android. SMBJ also carries an optional
 # desktop GSS/Kerberos authenticator, whose JDK classes are unavailable here.
 -dontwarn org.ietf.jgss.**
+
+# --- audio_service（Kazumi 播放器 / 朗读） -------------------------------
+# audio_service 0.18 没有提供 consumer proguard 规则，而本项目
+# isMinifyEnabled = true。R8 看不到这些类被直接引用（MainActivity 的父类、
+# Manifest 里按类名字符串声明的 Service / Receiver），会把它们连同
+# AudioServiceActivity 一起裁掉，表现为运行时
+# "The Activity class declared in your AndroidManifest.xml is wrong or
+#  has not provided the correct FlutterEngine"。
+-keep class com.ryanheise.audioservice.** { *; }
+-keep class * extends com.ryanheise.audioservice.AudioServiceActivity { *; }
+
+# MainActivity 继承的是 audio_service 的基类，父类被裁会直接
+# NoClassDefFoundError，这里显式保住整条继承链。
+-keep class com.fqapp.fqapp.MainActivity { *; }
+-keep class io.flutter.embedding.android.FlutterActivity { *; }

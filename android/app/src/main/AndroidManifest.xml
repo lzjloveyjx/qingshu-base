@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <queries>
         <package android:name="com.quark.browser"/>
         <package android:name="com.quark.clouddrive"/>
@@ -44,6 +45,22 @@
             android:name=".AiRequestService"
             android:exported="false"
             android:foregroundServiceType="dataSync"/>
+        <!-- 【青枢】audio_service（Kazumi 播放器/朗读共用）要求这两项，
+             缺了 AudioService.init() 会抛 "The Activity class declared in your
+             AndroidManifest.xml is wrong"，整条播放链路建不起来。 -->
+        <service android:name="com.ryanheise.audioservice.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true" tools:ignore="Instantiatable">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+        <receiver android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true" tools:ignore="Instantiatable">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
         <activity
             android:name=".MainActivity"
             android:exported="true"
