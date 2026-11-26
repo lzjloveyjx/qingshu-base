@@ -459,6 +459,37 @@ InheritedWidget 类型不同，互相认不出来。
    会把 bug 藏起来（第一版就是因此误判「测试通过」）。
 4. `.github/workflows/widget-test.yml` 在每次 push 跑这个测试。
 
+### 迁移后的验证（2026-11-26 08:5x）
+
+| 检查 | 结果 |
+|---|---|
+| `flutter analyze --no-pub packages/kazumi/lib` | 0 error（与迁移前错误集合逐行 diff **完全一致**，零新增） |
+| `flutter analyze --no-pub lib` | 0 error |
+| `flutter test test/widget/plugin_view_page_test.dart`（CI） | **通过**，日志 `RENDER EXCEPTION = none` |
+| `Build APK` run `45724494414`（commit `1a226e8`） | success |
+
+迁移过程中还发现并修掉两个**自己的**问题：
+
+1. `material_ui` 自己也导出 `MaterialShapes` / `RoundedPolygon`（自带一份 Compose
+   shapes 移植），和 `material_new_shapes` 重名。4 个文件同时 import 两者 →
+   `ambiguous_import`。这几个文件要的是 `material_new_shapes` 那份（有 `Morph`
+   和 `RoundedPolygonToPathExtension`，`material_ui` 的没有），所以在
+   `import material_ui` 时 `hide` 掉这两个名字。
+2. `widget-test.yml` 原来写成 `flutter test ... | tail -300`，**管道把退出码换成了
+   `tail` 的，测试失败 workflow 照样显示 success** —— 我第一轮就是被它骗过去的
+   （看到 "success" 就以为测试过了）。改成 `set -o pipefail`。
+
+还有一个真实缺陷：`SysAppBar` 里
+
+```dart
+static final bool showWindowButton = GStorage.getSetting(...);
+```
+
+是 `static final`，首次访问时读 `GStorage._setting`（`late final`）。没跑过
+`GStorage.init()` 就是 `LateInitializationError` —— release 下同样是一整块灰。
+主壳启动时 `KazumiBootstrap.ensureReady()` 会 init，所以线上不一定踩到，但
+测试必须走完整初始化才照得出来。
+
 ### 教训（给以后的我）
 
 - **release 下的灰块 = 有异常被 ErrorWidget 吞了**，但错误原文只有 debug 才看得到。
