@@ -17,6 +17,12 @@ import '../../models/media_item.dart';
 
 const String kAnimeSource = 'anime';
 const String _kMirror = 'https://api.kazumi.fyi';
+
+/// Bangumi v0 全量镜像（放开 search / subjects / episodes）。
+///
+/// api.kazumi.fyi 只代理了 popular 与 calendar 两条只读路径，搜索那条要签名；
+/// 这个镜像不签名就能用，实测 search / subjects / episodes / 图床全部 200。
+const String _kSearchMirror = 'https://bgmapi.anibt.net';
 const String _kUa =
     'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36';
@@ -48,6 +54,28 @@ Future<dynamic> _getJson(String url) async {
   }
 }
 
+/// POST JSON，用于 /v0/search/subjects（那个端点只接受 POST + JSON body）。
+Future<dynamic> _postJson(String url, Map<String, dynamic> body) async {
+  final client = HttpClient();
+  try {
+    client.userAgent = _kUa;
+    client.connectionTimeout = const Duration(seconds: 15);
+    final req = await client.postUrl(Uri.parse(url));
+    req.headers.contentType = ContentType.json;
+    req.headers.set('accept', 'application/json');
+    req.add(utf8.encode(jsonEncode(body)));
+    final res = await req.close().timeout(const Duration(seconds: 20));
+    if (res.statusCode != 200) return null;
+    final bytes = await consolidateHttpClientResponseBytes(res);
+    return jsonDecode(utf8.decode(bytes, allowMalformed: true));
+  } catch (e) {
+    debugPrint('anime _postJson failed: ' + url + ' :: ' + e.toString());
+    return null;
+  } finally {
+    client.close();
+  }
+}
+
 /// 封面：bgm 图床在国内直连不通。
 ///
 /// Kazumi 的做法是套 wsrv.nl 图片代理（见 bangumi_image_url_rewriter.dart），
@@ -60,6 +88,9 @@ String _cover(Map? images) {
   if (raw.isEmpty) return '';
   final uri = Uri.tryParse(raw);
   if (uri == null) return raw;
+  // bgmapi.anibt.net 镜像返回的封面在 bgmimg.anibt.net 上（已实测可达），
+  // 不需要再过 wsrv.nl，直接用它给的地址。
+  if (uri.host == 'bgmimg.anibt.net') return raw;
   final isBangumiImage = uri.host == 'lain.bgm.tv' ||
       (uri.host == 'api.bgm.tv' &&
           uri.pathSegments.length == 4 &&
@@ -367,4 +398,55 @@ Future<Map<String, dynamic>> fetchDetail(
     'creation_status': -1,
     'source': kAnimeSource,
   };
+}
+/// 全库搜索。
+///
+/// 端点：`POST https://bgmapi.anibt.net/v0/search/subjects`（Bangumi v0 官方
+/// 契约）。
+///
+/// 为什么用这个镜像而不是 api.kazumi.fyi：后者只代理了 popular / calendar 两条
+/// 只读路径，`/v0/search/subjects` 要请求签名；而这个 anibt 镜像直接放开了
+/// v0 全量接口（实测 search / subjects / episodes / 图床全部 200）。
+///
+/// 之前的本地索引方案保留在 anime_index.dart，作为离线兜底 —— 网络不通时
+/// 仍然能搜到历年季度表里的番剧。
+Future<AnimeSearchResult> searchAnime(
+  String keyword, {
+  int limit = 20,
+  int offset = 0,
+}) async {
+  final q = keyword.trim();
+  if (q.isEmpty) return const AnimeSearchResult(items: [], total: 0);
+  final data = await _postJson(
+    _kSearchMirror + '/v0/search/subjects?limit=' +
+        limit.toString() +
+        '&offset=' +
+        offset.toString(),
+    {
+      'keyword': q,
+      // type 2 = 动画。不限定平台，TV/剧场版/OAD 都要。
+      'filter': {
+        'type': [2],
+      },
+    },
+  );
+  if (data is! Map) return const AnimeSearchResult(items: [], total: 0);
+  final total = data['total'] is int ? data['total'] as int : 0;
+  final list = data['data'];
+  if (list is! List) return AnimeSearchResult(items: const [], total: total);
+  final out = <MediaItem>[];
+  for (final row in list) {
+    if (row is! Map) continue;
+    final item = _toItem(row.cast<String, Object?>());
+    if (item != null) out.add(item);
+  }
+  return AnimeSearchResult(items: out, total: total);
+}
+
+/// 搜索结果 + 总数（总数用于「共 N 条」和判断还能不能翻页）。
+class AnimeSearchResult {
+  const AnimeSearchResult({required this.items, required this.total});
+
+  final List<MediaItem> items;
+  final int total;
 }
