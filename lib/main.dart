@@ -80,6 +80,7 @@ import 'widgets/home/home_design.dart';
 import 'widgets/home/home_skeleton.dart';
 import 'widgets/home/classic_home_skeleton.dart';
 import 'package:kazumi/kazumi_bootstrap.dart';
+import 'package:kazumi/services/platform/webview_feature_service.dart';
 
 Future<void> main() async {
   // 绑定初始化与 runApp 必须处在同一个 Zone：此前 `ensureInitialized` 在
@@ -186,6 +187,30 @@ Future<void> _initAndroidMediaKit() async {
   }
 }
 
+/// Android WebView 特性探测。
+///
+/// Kazumi 的播放源解析有两条路：能在 document-start 注入脚本的走
+/// VideoWebviewAndroidImpl（能抓到 iframe 重定向后的真实直链），否则退回
+/// VideoWebviewImpl（只靠 shouldInterceptRequest 嗅探 m3u8）。
+/// 判定开关是 WebViewFeatureService.isDocumentStartScriptSupported ——
+/// 它默认 false，必须先 initialize() 才知道设备支不支持。
+///
+/// 上游在 main() 里调了这一句；青枢的启动流程没有，于是永远走 legacy
+/// 分支，很多源解析不出直链，播放页就一直停在「视频资源解析中」。
+Future<void> _initWebViewFeatures() async {
+  if (!Platform.isAndroid) return;
+  try {
+    await WebViewFeatureService.initialize();
+    AppLog.i(
+      "startup",
+      "WebView document-start script: " +
+          WebViewFeatureService.isDocumentStartScriptSupported.toString(),
+    );
+  } catch (error, stack) {
+    AppLog.w("startup", "WebView 特性探测失败", error: error, stack: stack);
+  }
+}
+
 Future<void> _loadLocalData() async {
   await Hive.initFlutter();
   // 以下初始化互相独立（各开各的 box / 各读各的配置），串行等只会把
@@ -217,6 +242,9 @@ Future<void> _loadLocalData() async {
     // Android 也必须 ensureInitialized，否则 media_kit 一建 Player 就抛
     // "MediaKit is not initialized"。放在可选段：失败只让动漫不能播。
     optional(_initAndroidMediaKit),
+    // 【青枢】WebView 特性探测：决定播放源解析走注入脚本还是回退 legacy 嗅探。
+    // 漏了这句会让很多源解析不出直链（播放页永远停在「视频资源解析中」）。
+    optional(_initWebViewFeatures),
     LibraryStore.instance.init(),
     // The 加入书架 collection is optional data: a failure here must not block
     // startup, which is why it shares the retryable bootstrap with the history.
