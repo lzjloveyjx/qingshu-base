@@ -80,6 +80,7 @@ import 'widgets/home/home_design.dart';
 import 'widgets/home/home_skeleton.dart';
 import 'widgets/home/classic_home_skeleton.dart';
 import 'package:kazumi/kazumi_bootstrap.dart';
+import 'package:kazumi/navigation.dart' show rootScaffoldMessengerKey;
 import 'package:kazumi/services/platform/webview_feature_service.dart';
 
 Future<void> main() async {
@@ -454,6 +455,14 @@ class _FqAppState extends State<FqApp> {
                   valueListenable: _styleStore,
                   builder: (context, style, _) => MaterialApp(
                     navigatorKey: _navigatorKey,
+                    // 【青枢】Kazumi 的 KazumiDialog.showToast 在拿不到
+                    // 局部 ScaffoldMessenger 时会回退到它自己的
+                    // rootScaffoldMessengerKey.currentState。那把 key 原本
+                    // 挂在 Kazumi 自己的 MaterialApp 上，主壳没有，于是
+                    // 永远为 null，所有 Toast 都静默丢失（日志里就是
+                    // "No ScaffoldMessenger available to show Toast"）。
+                    // 把同一把 key 交给主壳的 MaterialApp 即可。
+                    scaffoldMessengerKey: rootScaffoldMessengerKey,
                     navigatorObservers: [
                       _audioRoutes,
                       if (isWindowsDesktop) _desktopRoutes,
