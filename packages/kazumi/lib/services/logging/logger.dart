@@ -93,6 +93,40 @@ class KazumiLogPrinter extends LogPrinter {
   }
 }
 
+/// 把 Kazumi 的日志转发给宿主（青枢的 AppLog）。
+///
+/// 用一个可替换的回调而不是直接 import AppLog：packages/kazumi 是被嵌入的
+/// 子包，不该反向依赖主壳的 lib/services。主壳在启动时注入 sink，
+/// 没注入时这边静默丢弃，行为与改造前一致。
+class KazumiLogBridge {
+  KazumiLogBridge._();
+
+  /// 宿主注入的接收器：(是否错误级别, 文本)。
+  static void Function(bool isError, String message)? sink;
+
+  /// 避免播放页高频日志把宿主的日志缓冲刷爆。
+  static const int _maxPerMinute = 600;
+  static int _windowStart = 0;
+  static int _windowCount = 0;
+
+  static void emit(Level level, String message) {
+    final target = sink;
+    if (target == null || message.trim().isEmpty) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _windowStart > 60000) {
+      _windowStart = now;
+      _windowCount = 0;
+    }
+    if (_windowCount >= _maxPerMinute) return;
+    _windowCount++;
+    try {
+      target(level.index >= Level.warning.index, message);
+    } catch (_) {
+      // 日志转发失败绝不能影响播放本身。
+    }
+  }
+}
+
 class KazumiLogOutput extends LogOutput {
   static final Lock _logLock = Lock();
   static String? _logFilePath;
@@ -114,6 +148,12 @@ class KazumiLogOutput extends LogOutput {
   void output(OutputEvent event) {
     for (var line in event.lines) {
       print(line);
+      // 【青枢】把 Kazumi 的日志也送进青枢「运行日志」页。
+      //
+      // 不接这条线的话，播放链路的所有诊断（open 了哪个 URL、mpv 报什么
+      // 错、解析用了多久）只会写进应用私有目录的 kazumi_logs.log，用户在
+      // 界面上看不到，表现就是「一直在转圈，日志没有任何报错」。
+      KazumiLogBridge.emit(event.level, _removeAnsiCodes(line));
     }
 
     // Write to file if: warning/error/fatal OR forceLog is enabled

@@ -466,10 +466,24 @@ abstract class _PlayerPlaybackController with Store {
         }
       }
 
+      // 【青枢】诊断：记录真的交给 mpv 的信息。
+      // 现象是「一直转圈、时长 00:00、日志无报错」，可能是 open 抛错、
+      // 也可能是 open 成功但解码不出帧。这几行能区分两者。
+      final String hwdecDesc = hAenable ? hardwareDecoder : "no";
+      KazumiLogger().i(
+        'PlayerOpen: url=${videoUrl()} vo=$videoRenderer hwdec=$hwdecDesc '
+        'offset=$offset headers=${httpHeaders.keys.toList()}',
+      );
+      final sw = Stopwatch()..start();
       await player.open(
         Media(videoUrl(),
             start: Duration(seconds: offset), httpHeaders: httpHeaders),
         play: autoPlay,
+      );
+      sw.stop();
+      KazumiLogger().i(
+        'PlayerOpen: returned after ${sw.elapsedMilliseconds}ms '
+        'duration=${player.state.duration} width=${player.state.width} height=${player.state.height}',
       );
       if (!isCurrentPlayer(player)) {
         return await _discardIfNotCurrent(candidate);

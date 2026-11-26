@@ -81,6 +81,7 @@ import 'widgets/home/home_skeleton.dart';
 import 'widgets/home/classic_home_skeleton.dart';
 import 'package:kazumi/kazumi_bootstrap.dart';
 import 'package:kazumi/navigation.dart' show rootScaffoldMessengerKey;
+import 'package:kazumi/services/logging/logger.dart' show KazumiLogBridge;
 import 'package:kazumi/services/platform/webview_feature_service.dart';
 
 Future<void> main() async {
@@ -126,6 +127,16 @@ Future<void> _prepareRuntime() async {
   // [main] 的 runZonedGuarded 捕获；文件持久化异步开启，失败只退回内存模式。
   AppLog.instance.install();
   unawaited(AppLog.instance.startPersistence());
+  // 【青枢】把 Kazumi 的日志接进「我的 → 运行日志」。
+  // 播放链路的诊断全在 Kazumi 那套 logger 里，不接过来的话界面上一片安静，
+  // 只能看到一个不会结束的转圈。
+  KazumiLogBridge.sink = (isError, message) {
+    if (isError) {
+      AppLog.e('kazumi', message);
+    } else {
+      AppLog.i('kazumi', message);
+    }
+  };
   // release 构建里 Flutter 用 RenderErrorBox 把出错的子树画成一块纯灰
   // (0xF0C0C0C0)，既没有文字也不进日志 —— 「规则管理页灰块」和「播放器
   // 左黑右灰」都是这么来的，排查全靠猜。换成能显示异常类型的版本。
