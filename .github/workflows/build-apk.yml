@@ -56,16 +56,31 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build libgtk-3-dev
 
-      - name: Derive version from tag
+      # 版本号以 pubspec.yaml 为唯一事实来源。
+      #
+      # 之前是「tag 优先，没 tag 才读 pubspec」，结果是：只要忘打 tag，
+      # 发出去的包 versionName 就一直是 pubspec 里那个旧值（2.2.0），
+      # 用户装完根本分不清是不是新版。改成 pubspec 优先；打 tag 时
+      # 额外校验两者一致，不一致直接失败，避免 tag 和包内容对不上。
+      - name: Derive version
         id: ver
         run: |
           set -euo pipefail
+          NAME="$(grep -m1 '^version:' pubspec.yaml | sed 's/^version: *//' | cut -d+ -f1)"
+          if [ -z "$NAME" ]; then
+            echo "::error::pubspec.yaml 里读不到 version:"
+            exit 1
+          fi
           TAG="${GITHUB_REF_NAME}"
           if [[ "$TAG" =~ ^v?([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
-            NAME="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+            TAGVER="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.${BASH_REMATCH[3]}"
+            if [ "$TAGVER" != "$NAME" ]; then
+              echo "::error::tag ($TAGVER) 与 pubspec ($NAME) 不一致，先改 pubspec 再打 tag"
+              exit 1
+            fi
+            echo "tag 与 pubspec 一致: $NAME"
           else
-            NAME="$(grep -m1 '^version:' pubspec.yaml | sed 's/^version: *//' | cut -d+ -f1)"
-            echo "::warning::ref '$TAG' 不含版本号，回退到 pubspec: $NAME"
+            echo "ref '$TAG' 不是版本 tag，按 pubspec 出包: $NAME"
           fi
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           echo "build=${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
