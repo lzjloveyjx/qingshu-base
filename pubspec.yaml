@@ -16,7 +16,9 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.205+210
+# 【青枢】版本号用青枢自己的（原来是底座什锦铺的 1.0.205，安装界面显示的
+# 就是它，跟发布 tag 对不上）。CI 打 tag 构建时仍以 tag 名覆盖 name。
+version: 2.2.0+220
 
 environment:
   sdk: ^3.12.2
@@ -149,6 +151,11 @@ flutter:
     - assets/licenses/wenku8/LICENSE
     - assets/licenses/wenku8/GPL-3.0.txt
     - assets/licenses/wenku8/PORTING.md
+    # 【青枢】Anime4K 超分着色器（Kazumi 原版 assets/shaders 原样复制）。
+    # ShaderAssetService 从 rootBundle 读 assets/shaders/*.glsl 复制到应用目录，
+    # 再由 mpv 的 change-list glsl-shaders 加载。少了这个目录，超分辨率就是
+    # 一个「点了没反应」的开关。
+    - assets/shaders/
 
   # 首页档案版式用的衬线/等宽字体。CJK 衬线只取 GB2312 常用字（6763 个
   # 汉字 + 标点，约 5.2MB）；超出范围的生僻字由 homeSerifFallback 的系统

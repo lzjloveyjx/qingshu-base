@@ -18,7 +18,7 @@ import 'package:flutter/gestures.dart';
 import 'package:kazumi/pages/player/player_controller.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
-import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/kazumi_bootstrap.dart';
 import 'package:kazumi/pages/video/video_controller.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:canvas_danmaku/canvas_danmaku.dart';
@@ -77,8 +77,10 @@ class _PlayerItemState extends State<PlayerItem>
   late final PlayerController playerController;
   late final VideoPageController videoPageController =
       widget.videoPageController;
-  final HistoryController historyController = inject<HistoryController>();
-  final MyController myController = inject<MyController>();
+  // 青枢：Kazumi 原来用 flutter_modular 的 inject<>，主壳没有 ModularApp。
+  // 改成从装配层静态取（KazumiBootstrap 在启动时已建好这两个 controller）。
+  final HistoryController historyController = KazumiBootstrap.history;
+  final MyController myController = KazumiBootstrap.my;
   AudioController get _audioController => playerController.audioController;
   late final Map<String, PlayerShortcutAction> keyboardActions;
   late final Map<String, PlayerLongPressShortcutActions>

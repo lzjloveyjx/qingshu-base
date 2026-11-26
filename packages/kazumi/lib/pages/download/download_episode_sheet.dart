@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/kazumi_bootstrap.dart';
 import 'package:scrollview_observer/scrollview_observer.dart';
 
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
@@ -27,7 +27,8 @@ class DownloadEpisodeSheet extends StatefulWidget {
 
 class _DownloadEpisodeSheetState extends State<DownloadEpisodeSheet> {
   VideoPageController get videoPageController => widget.videoPageController;
-  final DownloadController downloadController = inject<DownloadController>();
+  // 青枢：同 player_item —— 从装配层取，不走 flutter_modular。
+  final DownloadController downloadController = KazumiBootstrap.download;
   final GridObserverController _observerController = GridObserverController();
 
   final Set<int> _selectedEpisodes = {};

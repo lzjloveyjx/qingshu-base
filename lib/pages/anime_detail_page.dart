@@ -13,7 +13,7 @@ import '../services/shelf_store.dart';
 import '../widgets/home/home_design.dart';
 import '../widgets/home/home_media_card.dart';
 import '../widgets/home/home_shelf.dart';
-import 'anime_player_page.dart';
+import '../services/anime/qingshu_playback.dart';
 import 'source_picker_sheet.dart';
 
 class AnimeDetailPage extends StatefulWidget {
@@ -275,7 +275,9 @@ class _AnimeDetailPageState extends State<AnimeDetailPage> {
           episode: episodeNumber < 1 ? 1 : episodeNumber,
         );
         if (picked == null || !context.mounted) return;
-        await openAnimePlayer(
+        // 走 Kazumi 原版播放页（浮层控件 / 手势 / 弹幕 / 超分 / 截图都在），
+        // 而不是青枢早先那个精简版。
+        await QingshuPlayback.open(
           context,
           item: widget.item,
           episode: episodeNumber < 1 ? 1 : episodeNumber,

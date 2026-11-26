@@ -66,7 +66,9 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = if (coexistBuild) "com.fqapp.fqapp.mod" else "com.fqapp.fqapp"
-        manifestPlaceholders["appLabel"] = if (coexistBuild) "什锦铺·改" else "什锦铺"
+        // 【青枢】安装界面显示的应用名。原来是底座什锦铺的名字，
+    // 装完在桌面上看到的还是「什锦铺」。
+    manifestPlaceholders["appLabel"] = if (coexistBuild) "青枢·改" else "青枢"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
