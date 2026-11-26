@@ -74,6 +74,46 @@ String _cover(Map? images) {
   }).toString();
 }
 
+/// 一条 subject 里可用于搜索的文本：中文名、原名、别名。
+///
+/// Bangumi 的 `name` 是原名（多为日文），`name_cn` 是中文名，`infobox` 里
+/// 还有「别名」一行。只按其中文名做 `contains` 会漏掉大量条目 —— 比如搜
+/// 「魔法少女」搜不到原名「魔法少女まどか☆マギカ」的中文译名变体。
+List<String> _searchKeywords(Map subject) {
+  final out = <String>{};
+  void add(Object? value) {
+    final text = (value ?? '').toString().trim();
+    if (text.isNotEmpty) out.add(text.toLowerCase());
+  }
+
+  add(subject['name']);
+  add(subject['name_cn']);
+  add(subject['nameCN']);
+  add(subject['nameCn']);
+  final infobox = subject['infobox'];
+  if (infobox is List) {
+    for (final row in infobox) {
+      if (row is! Map) continue;
+      // 只取「别名 / 別名 / alias」这一栏，其余（放送开始、话数等）不参与搜索。
+      final key = (row['key'] ?? '').toString().toLowerCase();
+      if (!key.contains('别名') &&
+          !key.contains('別名') &&
+          !key.contains('alias')) {
+        continue;
+      }
+      final value = row['value'];
+      if (value is List) {
+        for (final entry in value) {
+          if (entry is Map) add(entry['v']);
+        }
+      } else {
+        add(value);
+      }
+    }
+  }
+  return out.toList(growable: false);
+}
+
 /// 一条 Bangumi subject → MediaItem。
 MediaItem? _toItem(Map subject) {
   final id = subject['id'];
@@ -107,6 +147,10 @@ MediaItem? _toItem(Map subject) {
     score: score,
     intro: (subject['summary'] ?? '').toString().trim(),
     source: kAnimeSource,
+    // 搜索要用到原名与别名，但 MediaItem 没有专门的字段。categories 在动漫
+    // 条目的 UI 上不渲染（只有番茄榜单卡用），借它带一份「可搜索文本」。
+    // 这样不用改模型，也不影响任何现有展示。
+    categories: _searchKeywords(subject),
   );
 }
 

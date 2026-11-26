@@ -12,6 +12,7 @@ import '../services/anime/anime_source.dart';
 import '../widgets/home/home_design.dart';
 import '../widgets/home/home_media_card.dart';
 import '../widgets/home/home_shelf.dart';
+import 'anime_search_page.dart';
 import 'detail_page.dart';
 
 class AnimePage extends StatefulWidget {
@@ -102,6 +103,15 @@ class _AnimePageState extends State<AnimePage> {
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
         actions: [
+          IconButton(
+            tooltip: '搜索动漫',
+            icon: const Icon(LucideIcons.search, size: 20),
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (_) => const AnimeSearchPage(),
+              ),
+            ),
+          ),
           IconButton(
             tooltip: '刷新',
             icon: const Icon(LucideIcons.refresh_cw, size: 20),

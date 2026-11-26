@@ -808,7 +808,12 @@ class _PlayerItemPanelState extends State<PlayerItemPanel> {
     return EmbeddedNativeControlArea(
       requireOffset: compact || !videoPageController.isFullscreen,
       child: SafeArea(
-        top: false,
+        // 【青枢】顶部必须留出状态栏高度，不能是 false。
+        //
+        // Kazumi 原本写 top: false，前提是它进全屏时自己把系统栏隐藏了。
+        // 青枢没有走那条隐藏逻辑（PlayerSystemUi 只服务青枢自己的播放页），
+        // 所以状态栏一直在，返回/菜单键正好压在电量图标上，点不动。
+        top: true,
         bottom: false,
         left: !compact && widget.fillsWindow,
         right: !compact && widget.fillsWindow,
