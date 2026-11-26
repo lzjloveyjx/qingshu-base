@@ -81,7 +81,8 @@ import 'widgets/home/home_skeleton.dart';
 import 'widgets/home/classic_home_skeleton.dart';
 import 'package:kazumi/kazumi_bootstrap.dart';
 import 'services/anime/anime_index.dart';
-import 'package:kazumi/navigation.dart' show rootScaffoldMessengerKey;
+import 'package:kazumi/navigation.dart'
+    show rootScaffoldMessengerKey, rootRouteObserver;
 import 'package:kazumi/services/logging/logger.dart' show KazumiLogBridge;
 import 'package:kazumi/services/platform/webview_feature_service.dart';
 
@@ -481,6 +482,12 @@ class _FqAppState extends State<FqApp> {
                     scaffoldMessengerKey: rootScaffoldMessengerKey,
                     navigatorObservers: [
                       _audioRoutes,
+                      // 【青枢】Kazumi 的 VideoSystemBars / MenuPage 都靠
+                      // rootRouteObserver 判断自己是不是当前路由，进而决定
+                      // 要不要隐藏系统栏。这把 observer 原本注册在 Kazumi 自己的
+                      // MaterialApp 上，主壳没挂 —— subscribe 收不到任何回调，
+                      // _visible 恒为初始值，全屏时系统栏就不会被隐藏。
+                      rootRouteObserver,
                       if (isWindowsDesktop) _desktopRoutes,
                     ],
                     builder: (context, child) {
