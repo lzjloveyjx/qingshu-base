@@ -1,11 +1,13 @@
 import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:path_provider/path_provider.dart';
 
+import 'package:kazumi/pages/collect/collect_controller.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
 import 'package:kazumi/pages/history/history_controller.dart';
 import 'package:kazumi/pages/my/my_controller.dart';
 import 'package:kazumi/plugins/plugins_controller.dart';
 import 'package:kazumi/repositories/danmaku_shield_repository.dart';
+import 'package:kazumi/repositories/collect_crud_repository.dart';
 import 'package:kazumi/repositories/download_repository.dart';
 import 'package:kazumi/repositories/history_repository.dart';
 import 'package:kazumi/repositories/novel_shelf_repository.dart';
@@ -44,6 +46,7 @@ class KazumiBootstrap {
   static MyController? _my;
   static ShaderAssetService? _shaders;
   static DownloadRepository? _downloadRepo;
+  static CollectController? _collect;
 
   static Future<void>? _initializing;
   static bool _ready = false;
@@ -76,6 +79,9 @@ class KazumiBootstrap {
 
   static DownloadRepository get downloadRepository =>
       _downloadRepo ?? (throw StateError('KazumiBootstrap 未初始化'));
+
+  static CollectController get collect =>
+      _collect ?? (throw StateError('KazumiBootstrap 未初始化'));
 
   /// 幂等初始化。并发调用共享同一个 Future。
   static Future<void> ensureReady() {
@@ -114,6 +120,9 @@ class KazumiBootstrap {
     await _download!.init();
     _my = MyController(historyRepo, _downloadRepo!, shieldRepo);
     await _my!.loadShieldList();
+    // 收藏（追番）：播放页/详情页的收藏按钮直接 new 出来用，
+    // 过去靠 flutter_modular 的 inject<> 拿实例，主壳没有 ModularApp。
+    _collect = CollectController(CollectCrudRepository())..loadCollectibles();
 
     // Anime4K 着色器：从 rootBundle 复制到应用私有目录，mpv 才能按绝对路径加载。
     _shaders = ShaderAssetService();

@@ -5,6 +5,14 @@ import 'package:kazumi/services/logging/logger.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:kazumi/utils/device.dart';
 
+/// 画中画工具。
+///
+/// 青枢注意：`com.predidit.kazumi/pip` 这条原生通道是 Kazumi 自己的
+/// Android 插件实现的（MainActivity + PipPlugin），青枢没有移植，所以
+/// 这些方法必然抛 MissingPluginException —— 它是 PlatformException 的
+/// 兄弟类，原来 `on PlatformException` 抓不到，异常会冒到 zone 变成
+/// 「未捕获异步异常」。这里统一改成宽 catch：画中画不可用属于功能降级，
+/// 不该影响播放本身。
 class PipUtils {
   static bool androidPIPInited = false;
 
@@ -26,8 +34,8 @@ class PipUtils {
       final bool? supported =
           await pipChannel.invokeMethod('isPictureInPictureSupported');
       return supported ?? false;
-    } on PlatformException catch (e) {
-      KazumiLogger().e("Failed to check Android PIP support: '${e.message}'.");
+    } catch (e) {
+      KazumiLogger().e("Failed to check Android PIP support: '${e}'.");
       return false;
     }
   }
@@ -46,8 +54,8 @@ class PipUtils {
         'height': aspectSize.height.toInt(),
       });
       return entered ?? false;
-    } on PlatformException catch (e) {
-      KazumiLogger().e("Failed to enter Android PIP mode: '${e.message}'.");
+    } catch (e) {
+      KazumiLogger().e("Failed to enter Android PIP mode: '${e}'.");
       return false;
     }
   }
@@ -77,8 +85,8 @@ class PipUtils {
           'sourceBottom': sourceRect.bottom.round(),
         },
       });
-    } on PlatformException catch (e) {
-      KazumiLogger().e("Failed to update Android PIP actions: '${e.message}'.");
+    } catch (e) {
+      KazumiLogger().e("Failed to update Android PIP actions: '${e}'.");
     }
   }
 
@@ -91,9 +99,9 @@ class PipUtils {
       await pipChannel.invokeMethod('setAndroidAutoEnterPIPEnabled', {
         'enabled': enabled,
       });
-    } on PlatformException catch (e) {
+    } catch (e) {
       KazumiLogger().e(
-          "Failed to set Android auto-enter PIP enabled state: '${e.message}'.");
+          "Failed to set Android auto-enter PIP enabled state: '${e}'.");
     }
   }
 
@@ -106,8 +114,8 @@ class PipUtils {
       await pipChannel.invokeMethod('setAndroidPIPInPlayerPage', {
         'inPlayerPage': inPlayerPage,
       });
-    } on PlatformException catch (e) {
-      KazumiLogger().e("Failed to set Android PIP page state: '${e.message}'.");
+    } catch (e) {
+      KazumiLogger().e("Failed to set Android PIP page state: '${e}'.");
     }
   }
 

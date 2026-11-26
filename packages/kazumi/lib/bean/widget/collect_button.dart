@@ -1,5 +1,5 @@
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/kazumi_bootstrap.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
@@ -33,7 +33,8 @@ class CollectButton extends StatefulWidget {
 }
 
 class _CollectButtonState extends State<CollectButton> {
-  final _collectController = inject<CollectController>();
+  // 青枢：主壳没有 ModularApp，从装配层取（KazumiBootstrap 启动时已建好）。
+  final _collectController = KazumiBootstrap.collect;
 
   String _labelFor(CollectType type) =>
       type == CollectType.none ? '未追' : type.label;

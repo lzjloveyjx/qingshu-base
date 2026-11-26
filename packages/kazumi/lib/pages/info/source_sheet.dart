@@ -5,7 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
-import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/kazumi_bootstrap.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/bean/dialog/material_bottom_sheet.dart';
 import 'package:kazumi/bean/widget/kazumi_menu.dart';
@@ -41,8 +41,9 @@ class SourceSheet extends StatefulWidget {
 }
 
 class _SourceSheetState extends State<SourceSheet> with KazumiDialogOwner {
-  final CollectController _collectController = inject<CollectController>();
-  final PluginsController _pluginsController = inject<PluginsController>();
+  // 青枢：主壳没有 ModularApp，从装配层取。
+  final CollectController _collectController = KazumiBootstrap.collect;
+  final PluginsController _pluginsController = KazumiBootstrap.plugins;
   final Map<String, String> _sourceKeywords = {};
 
   late final String _keyword;
@@ -130,15 +131,12 @@ class _SourceSheetState extends State<SourceSheet> with KazumiDialogOwner {
             plugin.queryChapterRoads(searchItem.src, cancelToken: cancelToken),
       );
       if (roads.isEmpty) throw ChapterErrorException(plugin.name);
-      task.withContext((context) => context.pushNamed(
-            '/video/',
-            arguments: OnlineVideoPlaybackArgs(
-              bangumiItem: widget.infoController.bangumiItem,
-              plugin: plugin,
-              title: searchItem.name,
-              src: searchItem.src,
-              roads: roads,
-            ),
+      // 青枢：Kazumi 原版 SourceSheet 走 modular 路由进 VideoPage。
+      // 青枢的入口是 QingshuPlayback.open（要自己装配 controller），
+      // 而青枢的番剧详情页用的是 lib/pages/source_picker_sheet.dart，
+      // 不会走到这里 —— 保留提示，避免 modular 依赖。
+      task.withContext((_) => KazumiDialog.showToast(
+            message: '请在番剧详情页选择播放源',
           ));
     }, onError: (error, stackTrace) {
       KazumiLogger().w('SourceSheet: failed to query playlist', error: error);

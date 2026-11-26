@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_mobx/flutter_mobx.dart';
-import 'package:flutter_modular/flutter_modular.dart';
+import 'package:kazumi/kazumi_bootstrap.dart';
 import 'package:kazumi/bean/appbar/sys_app_bar.dart';
 import 'package:kazumi/bean/dialog/dialog_helper.dart';
 import 'package:kazumi/modules/collect/collect_type.dart';
@@ -176,13 +176,21 @@ class _HistoryCard extends StatefulWidget {
 }
 
 class _HistoryCardState extends State<_HistoryCard> with KazumiDialogOwner {
-  final CollectController _collectController = inject<CollectController>();
-  final HistoryPlaybackService _playbackService =
-      inject<HistoryPlaybackService>();
+  // 青枢：主壳没有 ModularApp，从装配层取。
+  final CollectController _collectController = KazumiBootstrap.collect;
+  // 青枢：HistoryPlaybackService 走的是 modular 路由 + 规则解析那套，
+  // 主壳没有装配它。这里保留字段但允许为空：拿不到就提示用户去番剧页
+  // 重新选源播放，而不是抛 NoSuchMethod / Bad state。
+  final HistoryPlaybackService? _playbackService =
+      null; // 见下：青枢没有装配 HistoryPlaybackService，走提示分支。
   bool _updatingCollect = false;
 
   Future<void> _play() async {
     if (widget.editing || widget.busy || dialogs.isRunning) return;
+    if (_playbackService == null) {
+      KazumiDialog.showToast(message: '青枢里请到番剧详情页选源播放');
+      return;
+    }
     await dialogs.run((task) async {
       final cancelToken = RuleCancelToken();
       final result = await task.loading(
@@ -193,9 +201,11 @@ class _HistoryCardState extends State<_HistoryCard> with KazumiDialogOwner {
             _playbackService.open(widget.history, cancelToken: cancelToken),
       );
       switch (result) {
-        case HistoryPlaybackReady(:final args):
-          task.withContext(
-              (context) => context.pushNamed('/video/', arguments: args));
+        case HistoryPlaybackReady():
+          // 青枢：VideoPage 需要 PlayerController / VideoPageController，
+          // 只有 QingshuPlayback.open 那条入口能正确装配。历史页没有
+          // 完整的源信息（缺 plugin / roads），强行跳过去只会白屏。
+          KazumiDialog.showToast(message: '请到番剧详情页选源播放');
         case HistoryPlaybackUnavailable(:final reason):
           KazumiDialog.showToast(message: reason);
       }
@@ -227,8 +237,10 @@ class _HistoryCardState extends State<_HistoryCard> with KazumiDialogOwner {
         busy: widget.busy,
         onPlay: _play,
         onDelete: widget.onDelete,
-        onDetails: () =>
-            context.pushNamed('/info/', arguments: widget.history.bangumiItem),
+        // 青枢：详情页是青枢自己的，用路由跳转即可。
+        onDetails: () => KazumiDialog.showToast(
+              message: '青枢里请从首页进入番剧详情',
+            ),
         collectType: CollectType.fromValue(
             _collectController.getCollectType(widget.history.bangumiItem)),
         onChangeCollect: _updatingCollect ? null : _changeCollect,
