@@ -132,12 +132,32 @@ jobs:
         run: |
           set -euo pipefail
           NDK_VERSION="28.2.13676358"
-          SDK_ROOT="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
-          if [ ! -d "$SDK_ROOT/ndk/$NDK_VERSION" ]; then
-            yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
-              "ndk;$NDK_VERSION" >/dev/null
+          # runner 上 SDK 位置不固定，且 ANDROID_HOME 未必导出到这一步。
+          # 逐个候选探测，找不到 sdkmanager 就直接报错（不要静默跳过，
+          # 否则后面 Rust 交叉编译会在更难懂的地方失败）。
+          SDK_ROOT=""
+          for cand in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" \
+                      /usr/local/lib/android/sdk "$HOME/android-sdk"; do
+            [ -n "$cand" ] || continue
+            if [ -x "$cand/cmdline-tools/latest/bin/sdkmanager" ]; then
+              SDK_ROOT="$cand"; break
+            fi
+          done
+          if [ -z "$SDK_ROOT" ]; then
+            echo "::error::找不到 sdkmanager（尝试过 ANDROID_HOME / ANDROID_SDK_ROOT / /usr/local/lib/android/sdk）"
+            ls -d /usr/local/lib/android/* 2>/dev/null || true
+            exit 1
           fi
+          echo "SDK_ROOT=$SDK_ROOT"
+          if [ ! -d "$SDK_ROOT/ndk/$NDK_VERSION" ]; then
+            echo "安装 NDK $NDK_VERSION ..."
+            yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
+              "ndk;$NDK_VERSION" > /tmp/ndk-install.log 2>&1 || {
+                echo "::error::NDK 安装失败"; tail -30 /tmp/ndk-install.log; exit 1; }
+          fi
+          test -d "$SDK_ROOT/ndk/$NDK_VERSION" || { echo "::error::NDK 目录不存在"; exit 1; }
           echo "ANDROID_NDK_HOME=$SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_ROOT=$SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
       - name: Compile the Rust core for Android
         run: bash scripts/build_rust_backend.sh --skip-codegen
