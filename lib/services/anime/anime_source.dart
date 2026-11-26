@@ -74,11 +74,15 @@ String _cover(Map? images) {
   }).toString();
 }
 
-/// 一条 subject 里可用于搜索的文本：中文名、原名、别名。
+/// 一条 subject 里可用于搜索的文本：中文名、原名、标签。
 ///
-/// Bangumi 的 `name` 是原名（多为日文），`name_cn` 是中文名，`infobox` 里
-/// 还有「别名」一行。只按其中文名做 `contains` 会漏掉大量条目 —— 比如搜
-/// 「魔法少女」搜不到原名「魔法少女まどか☆マギカ」的中文译名变体。
+/// Bangumi 的 `name` 是原名（多为日文），`nameCN` / `name_cn` 是中文名。
+/// 只按中文名匹配会漏掉大量条目 —— 搜「魔法少女」应当也能命中原名是
+/// 「魔法少女まどか☆マギカ」的条目。
+///
+/// 注意：镜像的 popular/subjects 与 calendar/season 都不返回 `infobox`
+/// （那是 /v0/subjects/{id} 的字段），所以这里不处理别名栏；能用的就是
+/// name / nameCN / name_cn / tags。
 List<String> _searchKeywords(Map subject) {
   final out = <String>{};
   void add(Object? value) {
@@ -90,25 +94,12 @@ List<String> _searchKeywords(Map subject) {
   add(subject['name_cn']);
   add(subject['nameCN']);
   add(subject['nameCn']);
-  final infobox = subject['infobox'];
-  if (infobox is List) {
-    for (final row in infobox) {
-      if (row is! Map) continue;
-      // 只取「别名 / 別名 / alias」这一栏，其余（放送开始、话数等）不参与搜索。
-      final key = (row['key'] ?? '').toString().toLowerCase();
-      if (!key.contains('别名') &&
-          !key.contains('別名') &&
-          !key.contains('alias')) {
-        continue;
-      }
-      final value = row['value'];
-      if (value is List) {
-        for (final entry in value) {
-          if (entry is Map) add(entry['v']);
-        }
-      } else {
-        add(value);
-      }
+  // 标签也参与搜索：搜「百合」「机战」时能按题材捞到，比只匹配标题实用。
+  final tags = subject['tags'] ?? subject['metaTags'];
+  if (tags is List) {
+    for (final tag in tags) {
+      if (tag is String) add(tag);
+      if (tag is Map) add(tag['name']);
     }
   }
   return out.toList(growable: false);
@@ -174,12 +165,17 @@ Future<List<MediaItem>> browsePopular({int offset = 0, int limit = 24}) async {
 }
 
 /// 季度时间表（镜像 /kazumi/v1/calendar/season），按星期一~日返回 7 组。
-Future<List<List<MediaItem>>> browseSeason({DateTime? at}) async {
+///
+/// [at] 指定起点；[endAt] 可显式指定终点，传整年区间就能一次拿全年
+/// （实测 2024 全年 295 条，比按四季请求相加的 290 条更全，且省 3/4 往返）。
+/// 不传 [endAt] 时按季度收尾，与 Kazumi 的原始语义一致。
+Future<List<List<MediaItem>>> browseSeason({DateTime? at, DateTime? endAt}) async {
   final now = at ?? DateTime.now();
-  // 当季：1-3 / 4-6 / 7-9 / 10-12
+  // 不传 endAt 时按季度对齐（1-3 / 4-6 / 7-9 / 10-12），与 Kazumi 语义一致；
+  // 传了 endAt 就尊重调用方给的原始起点，否则「整年」会被对齐成 Q1。
   final seasonStartMonth = ((now.month - 1) ~/ 3) * 3 + 1;
-  final start = DateTime(now.year, seasonStartMonth, 1);
-  final end = DateTime(now.year, seasonStartMonth + 3, 0);
+  final start = endAt != null ? now : DateTime(now.year, seasonStartMonth, 1);
+  final end = endAt ?? DateTime(now.year, seasonStartMonth + 3, 0);
   String fmt(DateTime d) =>
       d.year.toString().padLeft(4, '0') + '-' +
       d.month.toString().padLeft(2, '0') + '-' +

@@ -80,6 +80,7 @@ import 'widgets/home/home_design.dart';
 import 'widgets/home/home_skeleton.dart';
 import 'widgets/home/classic_home_skeleton.dart';
 import 'package:kazumi/kazumi_bootstrap.dart';
+import 'services/anime/anime_index.dart';
 import 'package:kazumi/navigation.dart' show rootScaffoldMessengerKey;
 import 'package:kazumi/services/logging/logger.dart' show KazumiLogBridge;
 import 'package:kazumi/services/platform/webview_feature_service.dart';
@@ -263,6 +264,10 @@ Future<void> _loadLocalData() async {
     // 漏了这句会让很多源解析不出直链（播放页永远停在「视频资源解析中」）。
     optional(_initWebViewFeatures),
     LibraryStore.instance.init(),
+    // 动漫本地索引：只读磁盘上已有的索引，不触发网络。
+    // 首次建立由搜索页按需触发（全量约 114 秒 / 4240 部），
+    // 不放在启动路径上，否则冷启动会被几十个网络请求拖住。
+    optional(AnimeIndex.instance.init),
     // The 加入书架 collection is optional data: a failure here must not block
     // startup, which is why it shares the retryable bootstrap with the history.
     ShelfStore.instance.init(),

@@ -10,6 +10,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_lucide/flutter_lucide.dart';
 
 import '../models/media_item.dart';
+import '../services/anime/anime_index.dart';
 import '../services/anime/anime_loaders.dart';
 import '../widgets/home/home_design.dart';
 import '../widgets/home/home_media_card.dart';
@@ -37,6 +38,7 @@ class _AnimeSearchPageState extends State<AnimeSearchPage> {
   @override
   void initState() {
     super.initState();
+    _prepareIndex();
     if (widget.initialQuery.trim().isNotEmpty) {
       _input.text = widget.initialQuery;
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -57,6 +59,62 @@ class _AnimeSearchPageState extends State<AnimeSearchPage> {
     _focus.dispose();
     super.dispose();
   }
+
+  /// 索引优先：本地索引有数据就只搜它，否则退回语料匹配。
+  bool _indexReady = false;
+  int _indexCount = 0;
+  bool _building = false;
+
+  Future<void> _prepareIndex() async {
+    try {
+      await AnimeIndex.instance.init();
+      if (!mounted) return;
+      setState(() {
+        _indexReady = !AnimeIndex.instance.isEmpty;
+        _indexCount = AnimeIndex.instance.itemCount;
+      });
+      // 首次使用没有索引：自动建一次精简版（榜单 3 页 + 最近两季），
+      // 几十个请求会慢，所以只在空索引时做，且让用户看到进度。
+      if (AnimeIndex.instance.isEmpty && !AnimeIndex.instance.isFresh) {
+        _buildIndex(full: false);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _buildIndex({required bool full}) async {
+    if (_building) return;
+    setState(() {
+      _building = true;
+      _loading = true;
+    });
+    try {
+      final count = await AnimeIndex.instance.rebuild(
+        full: full,
+        onProgress: (done, total) {
+          if (!mounted) return;
+          setState(() {}); // 触发 _progress 重绘
+          _progress = total == 0 ? 0 : done / total;
+        },
+      );
+      if (!mounted) return;
+      setState(() {
+        _indexReady = count > 0;
+        _indexCount = count;
+        _building = false;
+        _loading = false;
+        _progress = 1;
+      });
+      if (_lastQuery.isNotEmpty) _submit(_lastQuery);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _building = false;
+        _loading = false;
+      });
+    }
+  }
+
+  double _progress = 0;
 
   void _onChanged(String value) {
     _debounce?.cancel();
@@ -83,6 +141,17 @@ class _AnimeSearchPageState extends State<AnimeSearchPage> {
       _searched = true;
       _lastQuery = q;
     });
+    // 索引有数据时优先用索引：它覆盖 2010 年至今的季度表 + 榜单，
+    // 比「榜单 + 近两季」的语料匹配大一个量级，而且不依赖网络。
+    if (_indexReady) {
+      final hit = AnimeIndex.instance.search(q);
+      if (!mounted || q != _lastQuery) return;
+      setState(() {
+        _results = hit;
+        _loading = false;
+      });
+      return;
+    }
     try {
       final tabs = await animeHomeSearchTabs(q);
       if (!mounted || q != _lastQuery) return;
@@ -139,6 +208,29 @@ class _AnimeSearchPageState extends State<AnimeSearchPage> {
   }
 
   Widget _body(HomePalette palette) {
+    if (_building) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              LinearProgressIndicator(value: _progress == 0 ? null : _progress),
+              const SizedBox(height: 16),
+              Text(
+                '正在建立番剧索引…\n首次使用需要抓取历年番剧表，请稍候',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.6,
+                  color: palette.ink.withValues(alpha: 0.6),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -146,11 +238,19 @@ class _AnimeSearchPageState extends State<AnimeSearchPage> {
       return _hint(palette, '输入番剧名开始搜索');
     }
     if (_results.isEmpty) {
-      return _hint(
-        palette,
-        '没有找到「$_lastQuery」\n\n'
-            '搜索范围是当前榜单与近两季新番。若确定存在，'
-            '可到「本季新番」或「排行榜」里翻一翻。',
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _hint(
+            palette,
+            '没有找到「$_lastQuery」\n\n'
+                '索引已收录 $_indexCount 部番剧（榜单 + 历年季度表）。',
+          ),
+          TextButton(
+            onPressed: () => _buildIndex(full: true),
+            child: const Text('重建完整索引'),
+          ),
+        ],
       );
     }
     return GridView.builder(
