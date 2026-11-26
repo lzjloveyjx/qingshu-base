@@ -151,9 +151,18 @@ jobs:
           echo "SDK_ROOT=$SDK_ROOT"
           if [ ! -d "$SDK_ROOT/ndk/$NDK_VERSION" ]; then
             echo "安装 NDK $NDK_VERSION ..."
-            yes | "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" \
-              "ndk;$NDK_VERSION" > /tmp/ndk-install.log 2>&1 || {
-                echo "::error::NDK 安装失败"; tail -30 /tmp/ndk-install.log; exit 1; }
+            # 不要用 `yes | sdkmanager`：sdkmanager 先退出时 yes 收到 SIGPIPE，
+            # 配合 set -o pipefail 会把一条本来成功的安装判成失败
+            # （上一轮就是这样：下载到 23% 时日志里冒 "yes: standard output:
+            # Broken pipe"，紧接着 NDK 安装失败 —— 其实包根本没装完就 abort 了）。
+            # 许可证改用 --licenses 单独接受，NDK 安装只跑一次。
+            SDKM="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+            "$SDKM" --licenses < /dev/null > /dev/null 2>&1 || true
+            if ! "$SDKM" "ndk;$NDK_VERSION" > /tmp/ndk-install.log 2>&1; then
+              echo "::error::NDK 安装失败"
+              tail -30 /tmp/ndk-install.log
+              exit 1
+            fi
           fi
           test -d "$SDK_ROOT/ndk/$NDK_VERSION" || { echo "::error::NDK 目录不存在"; exit 1; }
           echo "ANDROID_NDK_HOME=$SDK_ROOT/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
