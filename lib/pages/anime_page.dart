@@ -1,7 +1,11 @@
 /// 青枢 · 动漫页（第 1 期：能看见、能查详情，还不能播）。
 ///
 /// 数据：Bangumi（国内直连不通，统一走 Kazumi 镜像 api.kazumi.fyi）。
-/// 展示沿用首页的网格与卡片：排行榜分页加载，本季新番按星期分节。
+/// 展示沿用首页的网格与卡片：热门番组分页加载 + 题材筛选，本季新番按星期分节。
+///
+/// 「热门番组」必须与 Kazumi 原版一致 —— 走 /kazumi/v1/popular/subjects
+/// （对 next.bgm.tv/p1/trending 的代理），是当下热度流，不是评分排名。
+/// 题材菜单也照抄 Kazumi 的 defaultAnimeTags。
 library;
 
 import 'package:material_ui/material_ui.dart';
@@ -23,13 +27,16 @@ class AnimePage extends StatefulWidget {
 }
 
 class _AnimePageState extends State<AnimePage> {
-  static const _tabs = ['排行榜', '本季新番'];
+  // 第一项是「热门番组」（Kazumi 原版叫法），第二项是本季新番时间表。
+  static const _tabs = ['热门番组', '本季新番'];
   static const _weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-  // 榜单镜像单页固定回 20 条（limit 传多少都一样），所以分页步长必须是 20，
-  // 否则「已加载 N 条」和真实 offset 对不上，会重复或跳过条目。
-  static const _pageSize = browsePageSize;
+  // 与 Kazumi 的 _trendPageSize 一致（24 条/页）。
+  static const int _pageSize = browsePageSize;
 
   int _tab = 0;
+
+  /// 当前榜单题材。空串 = Kazumi 的「热门番组」总流。
+  String _tag = '';
 
   /// 已向镜像请求过的条数（翻页游标，独立于列表长度）。
   int _loadedOffset = 0;
@@ -53,7 +60,7 @@ class _AnimePageState extends State<AnimePage> {
     });
     try {
       final results = await Future.wait<Object>([
-        browsePopular(offset: 0, limit: _pageSize),
+        browsePopular(offset: 0, limit: _pageSize, tag: _tag),
         browseSeason(),
       ]);
       if (!mounted) return;
@@ -86,7 +93,11 @@ class _AnimePageState extends State<AnimePage> {
       // 两种情况会让两者不等：① 镜像返回的条目里有解析失败的（标题为空
       // 会被丢掉）；② 后端返回重复 subject 被去重。用 _popular.length
       // 会回退 offset，导致一次「加载更多」拉回已经看过的内容。
-      final more = await browsePopular(offset: _loadedOffset, limit: _pageSize);
+      final more = await browsePopular(
+        offset: _loadedOffset,
+        limit: _pageSize,
+        tag: _tag,
+      );
       if (!mounted) return;
       setState(() {
         _loadedOffset += more.length;
@@ -95,15 +106,60 @@ class _AnimePageState extends State<AnimePage> {
           ..._popular,
           ...more.where((item) => existing.add(item.id)),
         ];
-        // 镜像 offset 到 1000 就返回空，按「拿满一页」判断是否还有更多。
-        _hasMore = more.length >= _pageSize &&
-            _loadedOffset < animeBrowseMaxOffset;
+        // 拿满一页就认为还有更多：Kazumi 原版也是这么判断的
+        // （trendList 用 isNotEmpty 判断，一直翻到上游返回空为止）。
+        _hasMore = more.length >= _pageSize;
         _loadingMore = false;
       });
     } catch (_) {
       if (!mounted) return;
       setState(() => _loadingMore = false);
     }
+  }
+
+  /// 切题材。与 Kazumi 的 _selectTag 一致：清掉当前列表、游标归零、重拉。
+  Future<void> _selectTag(String tag) async {
+    if (tag == _tag) return;
+    setState(() {
+      _tag = tag;
+      _popular = const [];
+      _loadedOffset = 0;
+      _hasMore = true;
+      _tab = 0;
+    });
+    await _load();
+  }
+
+  /// 题材菜单。顺序与 Kazumi 的 `['', ...defaultAnimeTags]` 完全一致。
+  Future<void> _showTagMenu() async {
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        final palette = HomePalette.of(context);
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              for (final tag in const ['', ...animeRankTags])
+                ListTile(
+                  dense: true,
+                  selected: tag == _tag,
+                  selectedColor: palette.ink,
+                  title: Text(tag.isEmpty ? '热门番组' : tag),
+                  trailing: tag == _tag
+                      ? Icon(LucideIcons.check, size: 16,
+                          color: palette.ink)
+                      : null,
+                  onTap: () => Navigator.of(context).pop(tag),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+    if (picked == null || !mounted) return;
+    await _selectTag(picked);
   }
 
   void _open(MediaItem item) => openBookDetail(context, item);
@@ -143,6 +199,34 @@ class _AnimePageState extends State<AnimePage> {
               padding: const EdgeInsets.symmetric(horizontal: homeGutter),
               child: Row(
                 children: [
+                  // 第一项是「热门番组 / 题材名」，点开就是 Kazumi 同款的
+                  // 题材菜单（空串 = 总流，其余按题材筛）。
+                  GestureDetector(
+                    onTap: _showTagMenu,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _tag.isEmpty ? '热门番组' : _tag,
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w700,
+                              color: palette.ink,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          Icon(
+                            LucideIcons.chevron_down,
+                            size: 14,
+                            color: palette.muted,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 18),
                   for (var i = 0; i < _tabs.length; i++) ...[
                     if (i > 0) const SizedBox(width: 18),
                     GestureDetector(

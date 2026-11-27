@@ -134,9 +134,8 @@ class AnimeIndex {
 
     final tasks = <Future<List<MediaItem>> Function()>[];
 
-    // 榜单：镜像单页固定 20 条、offset 上限约 1000，所以最多 50 页。
-    // 步长必须用 browsePageSize（20）——用 50 跳会漏掉 60% 的条目。
-    final popularPages = full ? 50 : 3;
+    // 榜单：Kazumi 原版端点每页回 browsePageSize（24）条，步长必须与它一致。
+    final popularPages = full ? 42 : 3;
     for (var i = 0; i < popularPages; i++) {
       final offset = i * browsePageSize;
       tasks.add(() => browsePopular(offset: offset, limit: browsePageSize));

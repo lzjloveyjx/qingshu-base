@@ -39,7 +39,7 @@ Future<List<SearchTab>> animeHomeSearchTabs(String query, {int page = 1}) async 
   // 语料：榜单多页（热门）+ 当季 + 上季。三路并发，任一失败不影响其余。
   final corpora = await Future.wait([
     for (var i = 0; i < 4; i++)
-      // 步长必须与镜像真实页大小一致（20），否则跳到 50/100/150 会漏条目。
+      // 步长必须等于真实页大小（browsePageSize = 24），按别的数跳会漏条目。
       browsePopular(offset: i * browsePageSize, limit: browsePageSize)
           .catchError((_) => <MediaItem>[]),
     browseSeason()
