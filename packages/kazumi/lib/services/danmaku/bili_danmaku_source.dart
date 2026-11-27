@@ -99,6 +99,77 @@ class BiliDanmakuSource {
     return out;
   }
 
+  /// 自动兜底专用：挑一条**像整集番剧**的视频。
+  ///
+  /// 直接取搜索结果第一条不可靠 —— 实测搜「进击的巨人」第一条是
+  /// 「在百万豪装录音棚大声听 进击的巨人ost」，拿它的弹幕会全串。
+  ///
+  /// 判据（都很粗，但能把 OST/剪辑/解说筛掉）：
+  ///   1. 标题里含番剧名（去掉标点后比较）
+  ///   2. 时长 ≥ 10 分钟（OST 试听、短视频剪一般不满足）
+  /// 挑时长最长的那个 —— 整集/合集的弹幕量最对得上。
+  static BiliSearchHit? pickForAutoMatch(
+    List<BiliSearchHit> hits,
+    String keyword,
+  ) {
+    final needle = _normalize(keyword);
+    if (needle.isEmpty) return null;
+    // 番剧名常带「第二季」「就此开始动」这类尾巴，而搜索结果标题是
+    // 「世界最强的魔女 就此开始动」—— 正反双向包含都算命中才够用。
+    // 另外整季合集标题里偶尔会把名字拆开加符号（「葬送的-芙-莉-莲」），
+    // 已经在 _normalize 里去掉标点了。
+    bool matches(String title) {
+      final t = _normalize(title);
+      if (t.contains(needle)) return true;
+      // 反向：标题是番剧名的子串（番剧名带季数尾巴时会出现）。
+      if (t.isNotEmpty && needle.contains(t) && t.length >= 4) return true;
+      return false;
+    }
+
+    // 「全 12 话」「全集」「合集」这类才是整季，弹幕量和进度条都对得上。
+    // 纯按「时长最长」会挑到十小时的解说/剪辑（实测搜「进击的巨人」
+    // 最长那条是 43 小时的剧情解析）。所以先按合集关键词分档，
+    // 同一档内再挑时长最长的。
+    bool looksLikeSeries(String title) {
+      for (final marker in const [
+        '全',
+        '合集',
+        '完整版',
+        '第一季',
+        '第二季',
+        '第三季',
+        '第1季',
+        '第2季',
+      ]) {
+        if (title.contains(marker)) return true;
+      }
+      return false;
+    }
+
+    BiliSearchHit? best;
+    bool bestIsSeries = false;
+    for (final hit in hits) {
+      if (hit.durationSeconds < 600) continue;
+      if (!matches(hit.title)) continue;
+      final isSeries = looksLikeSeries(hit.title);
+      final better = best == null ||
+          (isSeries && !bestIsSeries) ||
+          (isSeries == bestIsSeries &&
+              hit.durationSeconds > best.durationSeconds);
+      if (better) {
+        best = hit;
+        bestIsSeries = isSeries;
+      }
+    }
+    return best;
+  }
+
+  /// 去掉标点与空白，只留字母数字和汉字，避免「葬送的-芙-莉-莲」这种
+  /// 搜索结果标题里的分隔符导致 contains 失败。
+  static String _normalize(String raw) => raw
+      .toLowerCase()
+      .replaceAll(RegExp(r'[\s\p{P}\p{S}]', unicode: true), '');
+
   /// 取该视频第一个分P的 cid（弹幕按 cid 索引）。
   static Future<int> cidOf(String bvid) async {
     if (bvid.isEmpty) return 0;

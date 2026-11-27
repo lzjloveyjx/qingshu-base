@@ -166,14 +166,21 @@ abstract class _PlayerDanmakuController with Store {
     int bangumiId,
   ) async {
     try {
-      final hits = await BiliDanmakuSource.search(title, limit: 1);
-      if (hits.isEmpty) {
+      // 不能只取第一条：实测搜「进击的巨人」第一条是 OST 试听。
+      final hits = await BiliDanmakuSource.search(title, limit: 20);
+      final hit = BiliDanmakuSource.pickForAutoMatch(hits, title);
+      if (hit == null) {
+        KazumiLogger().i(
+          'PlayerController: BiliBili 没找到匹配的整集视频'
+          '（title=$title），可在弹幕源面板手动选',
+        );
         return DanmakuLoadResult.success(
           danmakus: const [],
           bangumiID: bangumiId,
         );
       }
-      final cid = await BiliDanmakuSource.cidOf(hits.first.bvid);
+      KazumiLogger().i('PlayerController: BiliBili 兜底命中 $hit');
+      final cid = await BiliDanmakuSource.cidOf(hit.bvid);
       if (cid == 0) {
         return DanmakuLoadResult.success(
           danmakus: const [],
