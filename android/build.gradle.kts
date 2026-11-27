@@ -9,6 +9,11 @@ allprojects {
         }
         google()
         mavenCentral()
+        // 与 settings.gradle.kts 同理：mavenCentral 在 CI 上会 429，
+        // 加 Google 的 Maven Central 镜像做兜底（被限流时能接着解析）。
+        maven {
+            url = uri("https://maven-central.storage-download.googleapis.com/maven2")
+        }
     }
 }
 
