@@ -5,6 +5,8 @@ import 'package:kazumi/pages/video/video_playback_args.dart';
 import 'package:kazumi/plugins/plugins.dart';
 import 'package:kazumi/pages/history/history_controller.dart';
 import 'package:kazumi/pages/player/player_controller.dart';
+import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
+import 'package:kazumi/request/clients/danmaku_client.dart';
 import 'package:kazumi/modules/bangumi/bangumi_item.dart';
 import 'package:kazumi/modules/download/download_module.dart';
 import 'package:kazumi/modules/history/history_module.dart';
@@ -546,11 +548,25 @@ abstract class _VideoPageController with Store implements Disposable {
     final danmakuSession = _danmakuSessions.begin();
     playerController.danmaku.beginDanmakuLoad();
     try {
-      final result = await playerController.danmaku.fetchDanmaku(
-        params.bangumiId,
-        params.pluginName,
-        params.danmakuEpisodeNumber,
-      );
+      DanmakuLoadResult result;
+      try {
+        result = await playerController.danmaku.fetchDanmaku(
+          params.bangumiId,
+          params.pluginName,
+          params.danmakuEpisodeNumber,
+        );
+      } on DanmakuUnavailableException {
+        // DanDanPlay 需要 CI 注入的 AppId/Key，青枢没有 → 必然 403。
+        // 自动落到不需要鉴权的 BiliBili：用番剧标题搜第一条。
+        final title = _biliDanmakuKeyword(params);
+        result = title.isEmpty
+            ? DanmakuLoadResult.success(
+                danmakus: const [],
+                bangumiID: params.bangumiId,
+              )
+            : await playerController.danmaku
+                .fetchBiliDanmakuByTitle(title, params.bangumiId);
+      }
       if (session.isActive && danmakuSession.isActive) {
         if (result.hasDanmakus) {
           final bool enableDanmaku =
@@ -573,6 +589,19 @@ abstract class _VideoPageController with Store implements Disposable {
       }
       KazumiLogger().w('VideoPageController: failed to load danmaku', error: e);
     }
+  }
+
+  /// BiliBili 兜底用的搜索词。
+  ///
+  /// 优先番剧中文名：源给的 [title] 常带「第 N 集」「CHT」这类后缀，
+  /// 拿去搜 BiliBili 命中率明显更低。中文名为空时才退回 [title]。
+  String _biliDanmakuKeyword(PlaybackInitParams params) {
+    final item = bangumiItem;
+    final cn = item.nameCn.trim();
+    if (cn.isNotEmpty) return cn;
+    final original = item.name.trim();
+    if (original.isNotEmpty) return original;
+    return title.trim();
   }
 
   void cancelAutomaticDanmakuLoad() {

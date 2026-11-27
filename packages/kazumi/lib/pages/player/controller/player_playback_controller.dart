@@ -493,12 +493,17 @@ abstract class _PlayerPlaybackController with Store {
         );
       });
 
-      if (superResolutionMode != SuperResolutionMode.off) {
-        await setShader(superResolutionMode, player: player);
-        if (!isCurrentPlayer(player)) {
-          return await _discardIfNotCurrent(candidate);
-        }
-      }
+      // 【青枢】这里**不**应用着色器。
+      //
+      // open 之前 vo 还是 'null'（media_kit 在 surface 建好前设的占位），
+      // 此时把 glsl-shaders 写进去，mpv 只是记下属性值，并没有 GL 上下文
+      // 去编译它 —— 日志上「applied ... glsl-shaders=/...glsl」看着成功，
+      // 实际一帧都没跑。用户看到的就是「开了质量档没效果」。
+      //
+      // 实测日志：mode=效率档 ... vo=null hwdec=mediacodec-copy
+      //   → vo=null 就是证据。
+      //
+      // 正确时机是 open 之后（见下面 open 完那段）。
 
       if (videoSourceFormat == VideoSourceFormat.hls) {
         await pp.setProperty('demuxer-lavf-format', 'hls');
@@ -531,6 +536,20 @@ abstract class _PlayerPlaybackController with Store {
         return await _discardIfNotCurrent(candidate);
       }
 
+      // 【青枢】open 完成后 vo 才会从 'null' 变成真正的 gpu / gpu-next，
+      // 这时挂 glsl-shaders 才会被真正编译。等一小会儿让它就位。
+      if (Platform.isAndroid &&
+          superResolutionMode != SuperResolutionMode.off) {
+        await _waitForGlReady(pp);
+        if (!isCurrentPlayer(player)) {
+          return await _discardIfNotCurrent(candidate);
+        }
+        await setShader(superResolutionMode, player: player);
+        if (!isCurrentPlayer(player)) {
+          return await _discardIfNotCurrent(candidate);
+        }
+      }
+
       if (cachePolicy.networkAutomatic) {
         KazumiDialog.showToast(message: '移动数据下已自动开启低内存模式，可在播放设置中改为始终关闭');
       }
@@ -544,6 +563,21 @@ abstract class _PlayerPlaybackController with Store {
       }
       await candidate.dispose();
       Error.throwWithStackTrace(error, stackTrace);
+    }
+  }
+
+  /// 等到 mpv 的 vo 真正就绪（不再是 media_kit 的 'null' 占位）。
+  ///
+  /// media_kit 在 surface 建好之前把 vo 设成 'null'，此时挂 glsl-shaders
+  /// 不会编译。open 之后通常几十毫秒内就绪，这里轮询到就绪或超时为止。
+  Future<void> _waitForGlReady(NativePlayer pp) async {
+    for (var i = 0; i < 40; i++) {
+      String vo = '';
+      try {
+        vo = (await pp.getProperty('vo')).trim();
+      } catch (_) {}
+      if (vo.isNotEmpty && vo != 'null') return;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
     }
   }
 
@@ -633,9 +667,12 @@ abstract class _PlayerPlaybackController with Store {
         // 另外：光 setProperty('hwdec', ...) 是不够的 —— mpv 不会在播放
         // 中途重建解码器，日志上看着切换成功，画面照样是原来的路径。必须
         // 带着新参数重新 open 一次当前 URL。这里保留播放位置与请求头。
+        // 注意：正常起播路径不会走到这里 —— open 之前已经把 hwdec 设成
+        // copy-back 了。只有「播放中途手动切档」时才可能还是直通。
         final bool passthrough =
             hwdec != null && hwdec.isNotEmpty && !hwdec.endsWith('-copy') &&
-                hwdec != 'no';
+                hwdec != 'no' &&
+                hwdec != 'null';
         if (passthrough) {
           final position = currentPlayer.state.position;
           final target = _copyBackHwdec(
@@ -717,10 +754,25 @@ abstract class _PlayerPlaybackController with Store {
       try {
         applied = await pp.getProperty('glsl-shaders');
       } catch (_) {}
-      KazumiLogger().i(
-        'SuperResolution: applied mode=${mode.label} '
-        'glsl-shaders=${(applied ?? "").trim().isEmpty ? "（空，未加载）" : applied}',
-      );
+      // vo 再读一次：如果还是 'null'，说明这次也没生效 —— 明确报出来，
+      // 不要再用「applied」这种让人以为成功的措辞。
+      String voAfter = '';
+      try {
+        voAfter = (await pp.getProperty('vo')).trim();
+      } catch (_) {}
+      final bool loaded = (applied ?? '').trim().isNotEmpty;
+      if (loaded && voAfter.isNotEmpty && voAfter != 'null') {
+        KazumiLogger().i(
+          'SuperResolution: 生效 mode=${mode.label} vo=$voAfter '
+          'glsl-shaders=$applied',
+        );
+      } else {
+        KazumiLogger().e(
+          'SuperResolution: 未生效 mode=${mode.label} vo=$voAfter '
+          'glsl-shaders=${loaded ? applied : "（空）"} '
+          '—— vo 仍是 null 说明 GL 上下文还没建好',
+        );
+      }
     } catch (e, stack) {
       KazumiLogger().w(
         'PlayerController: failed to set shader (mode=$mode)',

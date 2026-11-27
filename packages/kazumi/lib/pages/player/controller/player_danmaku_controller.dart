@@ -6,6 +6,7 @@ import 'package:kazumi/pages/download/download_controller.dart';
 import 'package:kazumi/request/apis/danmaku_api.dart';
 import 'package:kazumi/request/clients/danmaku_client.dart';
 import 'package:kazumi/services/logging/logger.dart';
+import 'package:kazumi/services/danmaku/bili_danmaku_source.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:mobx/mobx.dart';
 import 'package:kazumi/utils/danmaku.dart';
@@ -153,6 +154,41 @@ abstract class _PlayerDanmakuController with Store {
       bangumiId,
       episode,
     );
+  }
+
+  /// DanDanPlay 不可用时的自动兜底：用番剧标题去 BiliBili 搜。
+  ///
+  /// 需要标题，所以由调用方传进来（控制器本身只认 bangumiId）。
+  /// 取第一条搜索结果 —— BiliBili 的相关性排序用下来够用；不准的话
+  /// 用户可以在弹幕源面板里手动选。
+  Future<DanmakuLoadResult> fetchBiliDanmakuByTitle(
+    String title,
+    int bangumiId,
+  ) async {
+    try {
+      final hits = await BiliDanmakuSource.search(title, limit: 1);
+      if (hits.isEmpty) {
+        return DanmakuLoadResult.success(
+          danmakus: const [],
+          bangumiID: bangumiId,
+        );
+      }
+      final cid = await BiliDanmakuSource.cidOf(hits.first.bvid);
+      if (cid == 0) {
+        return DanmakuLoadResult.success(
+          danmakus: const [],
+          bangumiID: bangumiId,
+        );
+      }
+      final danmakus = await BiliDanmakuSource.commentsOf(cid);
+      return DanmakuLoadResult.success(
+        danmakus: danmakus,
+        bangumiID: bangumiId,
+      );
+    } catch (e) {
+      KazumiLogger().w('PlayerController: BiliBili 弹幕兜底失败', error: e);
+      return DanmakuLoadResult.failed(bangumiID: bangumiId);
+    }
   }
 
   @action
@@ -305,6 +341,18 @@ abstract class _PlayerDanmakuController with Store {
           error: e);
     }
     return DanmakuLoadResult.failed(bangumiID: nextBangumiID);
+  }
+
+  /// 直接把一批已经拿到手的弹幕挂上去（BiliBili 源用）。
+  ///
+  /// 与 DanDanPlay 的路径不同：那边是「给 episodeID，自己去拉」，
+  /// 这边搜索/取 cid/下载都已经在调用方做完，避免把三件事塞进控制器。
+  @action
+  void applyExternalDanmakus(List<DanmakuEntry> danmakus) {
+    danDanmakus.clear();
+    addDanmakus(danmakus);
+    danmakuOn = danmakus.isNotEmpty;
+    danmakuLoading = false;
   }
 
   @action

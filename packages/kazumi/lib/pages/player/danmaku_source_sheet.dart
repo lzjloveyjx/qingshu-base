@@ -18,6 +18,7 @@ import 'package:kazumi/modules/danmaku/danmaku_search_response.dart';
 import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
 import 'package:kazumi/request/apis/danmaku_api.dart';
 import 'package:kazumi/request/clients/danmaku_client.dart';
+import 'package:kazumi/services/danmaku/bili_danmaku_source.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
 
@@ -108,6 +109,10 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
 
   _SourceStep _step = _SourceStep.search;
   List<DanmakuSearchAnime> _animes = const [];
+
+  /// 当前结果来自 BiliBili（DanDanPlay 缺凭证时的自动落地方）。
+  bool _usingBili = false;
+  List<BiliSearchHit> _biliHits = const [];
   List<DanmakuEpisode> _episodes = const [];
   String? _animeTitle;
   int? _segmentStart;
@@ -143,6 +148,8 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
       _error = null;
       _step = _SourceStep.anime;
       _animes = const [];
+      _biliHits = const [];
+      _usingBili = false;
       if (recordSearch) {
         _recentKeywords
           ..remove(keyword)
@@ -168,17 +175,69 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
         if (response.animes.isEmpty) _error = '未找到番剧';
       });
     } on DanmakuUnavailableException {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = '未配置 DanDanPlay 凭证，该源不可用';
-      });
+      // DanDanPlay 需要 CI 注入的 AppId/Key，青枢的构建里没有。
+      // 自动落到不需要鉴权的 BiliBili 源，而不是让用户对着「不可用」干瞪眼。
+      await _searchBili(keyword);
     } catch (error) {
       KazumiLogger().w('Danmaku source search failed', error: error);
       if (!mounted) return;
       setState(() {
         _loading = false;
         _error = '搜索失败';
+      });
+    }
+  }
+
+  /// 用 BiliBili 搜。结果塞进 _biliHits，走独立的一步（不分集，直接取 cid）。
+  Future<void> _searchBili(String keyword) async {
+    try {
+      final hits = await BiliDanmakuSource.search(keyword);
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _biliHits = hits;
+        _usingBili = true;
+        _error = hits.isEmpty ? 'BiliBili 也没有搜到相关视频' : null;
+      });
+    } catch (error) {
+      KazumiLogger().w('Bilibili danmaku search failed', error: error);
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = '搜索失败';
+      });
+    }
+  }
+
+  /// 选中一条 BiliBili 视频：取 cid → 拉弹幕 → 挂上去。
+  Future<void> _applyBili(BiliSearchHit hit) async {
+    setState(() => _loading = true);
+    try {
+      final cid = await BiliDanmakuSource.cidOf(hit.bvid);
+      if (cid == 0) {
+        if (!mounted) return;
+        setState(() {
+          _loading = false;
+          _error = '取不到该视频的弹幕索引';
+        });
+        return;
+      }
+      final danmakus = await BiliDanmakuSource.commentsOf(cid);
+      if (!mounted) return;
+      widget.onBeforeApply();
+      widget.danmakuController.applyExternalDanmakus(danmakus);
+      KazumiDialog.dismiss(context: context);
+      KazumiDialog.showToast(
+        message: danmakus.isEmpty
+            ? '该视频没有弹幕'
+            : '已载入 ${danmakus.length} 条弹幕',
+      );
+    } catch (error) {
+      KazumiLogger().w('Bilibili danmaku apply failed', error: error);
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = '弹幕加载失败';
       });
     }
   }
@@ -462,6 +521,48 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
         title: _error!,
         actions: [
           StateActionButton.tonal(onPressed: _goBack, text: '返回搜索'),
+        ],
+      );
+    }
+    // BiliBili 落地方：DanDanPlay 缺凭证时 _usingBili 为 true，
+    // 这里展示视频列表（点一条直接载入该视频的弹幕）。
+    if (_usingBili) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'BiliBili 结果（点击载入该视频弹幕）',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ),
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+              itemCount: _biliHits.length,
+              separatorBuilder: (_, __) =>
+                  const SizedBox(height: splitListRowGap),
+              itemBuilder: (context, index) {
+                final hit = _biliHits[index];
+                return SplitListRow(
+                  first: index == 0,
+                  last: index == _biliHits.length - 1,
+                  onTap: () => _applyBili(hit),
+                  child: ListTile(
+                    title: Text(hit.title,
+                        maxLines: 2, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(hit.bvid),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                  ),
+                );
+              },
+            ),
+          ),
         ],
       );
     }
