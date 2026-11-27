@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_lucide/flutter_lucide.dart';
 
 import '../../pages/about_page.dart';
+import '../../pages/anime_follow_page.dart';
 import '../../pages/book_source_page.dart';
 import '../../pages/cached_books_page.dart';
 import '../../pages/play_source_page.dart';
@@ -146,6 +147,11 @@ class ClassicMineEntries extends StatelessWidget {
           // 动漫的下载管理与观看历史：Kazumi 那边页面是现成的，
           // 但主壳一直没有入口，等于「下载了找不到、看过也不记得」。
           // 这两项与「工具」分组无关，任何布局下都要能进。
+          ClassicMineEntryRow(
+            icon: LucideIcons.tv,
+            label: '追番',
+            onTap: () => _push(context, const AnimeFollowPage()),
+          ),
           ClassicMineEntryRow(
             icon: LucideIcons.download,
             label: '动漫下载',

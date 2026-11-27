@@ -18,7 +18,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # of the product and file versions while build-number is used as the build suffix.
 # 【青枢】版本号用青枢自己的（原来是底座什锦铺的 1.0.205，安装界面显示的
 # 就是它，跟发布 tag 对不上）。CI 打 tag 构建时仍以 tag 名覆盖 name。
-version: 2.5.1+251
+version: 2.6.0+260
 
 environment:
   sdk: ^3.12.2
