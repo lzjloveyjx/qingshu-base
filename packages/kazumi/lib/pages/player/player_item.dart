@@ -918,13 +918,10 @@ class _PlayerItemState extends State<PlayerItem>
             ),
             actions: [
               TextButton(
-                onPressed: () async {
-                  if (dontAskAgain) {
-                    await GStorage.putSetting(
-                      SettingsKeys.disableSuperResolutionWarning,
-                      true,
-                    );
-                  }
+                onPressed: () {
+                  // 【青枢】取消不能写 disableSuperResolutionWarning。
+                  // 原来这个分支也会把「下次不再询问」落盘成 true —— 用户点
+                  // 一次取消就再也看不到提示，还会以为开关坏了。
                   if (!context.mounted) return;
                   KazumiDialog.dismiss(context: context);
                 },

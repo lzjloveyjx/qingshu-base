@@ -518,6 +518,29 @@ abstract class _PlayerPlaybackController with Store {
       if (!identical(mediaPlayer, currentPlayer)) {
         return;
       }
+      // 【青枢】诊断：超分辨率「点了没反应」时，先要区分三种情况：
+      //   a) 着色器目录是空的（copyShadersToExternalDirectory 没跑到/失败）
+      //   b) mpv 不认这个 vo（mediacodec_embed 不支持 glsl-shaders）
+      //   c) 命令发下去了但着色器编译失败（Anime4K 需要 GLSL 支持）
+      // 先把路径和目录内容写进日志，用户截图就能定位。
+      final shaderDir = shaderAssetService.shadersDirectory;
+      final dirExists = await shaderDir.exists();
+      final fileCount = dirExists
+          ? shaderDir.listSync().whereType<File>().length
+          : 0;
+      String? vo;
+      try {
+        vo = await pp.getProperty('vo');
+      } catch (_) {}
+      KazumiLogger().i(
+        'SuperResolution: mode=$mode dir=${shaderDir.path} '
+        'exists=$dirExists files=$fileCount vo=$vo',
+      );
+      if (!dirExists || fileCount == 0) {
+        KazumiLogger().e('SuperResolution: 着色器目录为空，超分不会生效');
+        superResolutionMode = mode;
+        return;
+      }
       switch (mode) {
         case SuperResolutionMode.efficiency:
           await pp.command([
@@ -546,8 +569,16 @@ abstract class _PlayerPlaybackController with Store {
           break;
       }
       superResolutionMode = mode;
-    } catch (e) {
-      KazumiLogger().w('PlayerController: failed to set shader', error: e);
+      KazumiLogger().i(
+        'SuperResolution: applied mode=$mode shaders=' 
+        '${mode == SuperResolutionMode.off ? "cleared" : buildShadersAbsolutePath(shaderDir.path, mode == SuperResolutionMode.quality ? mpvAnime4KShaders : mpvAnime4KShadersLite)}',
+      );
+    } catch (e, stack) {
+      KazumiLogger().w(
+        'PlayerController: failed to set shader (mode=$mode)',
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
