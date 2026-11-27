@@ -219,6 +219,52 @@ jobs:
             echo "keyPassword=$KEY_PASSWORD"
           } > android/keystore.properties
 
+      # 给 CI 换 Gradle 下载源。
+      #
+      # distributionUrl 指向 services.gradle.org，它会 307 到
+      # github.com/gradle/gradle-distributions 的 release 资产；GitHub 对
+      # Actions 出口 IP 的这类下载会间歇性回 403。2026-11-27 的 v2.4.2 tag
+      # 构建就挂在这里：
+      #
+      #   java.io.IOException: Server returned HTTP response code: 403 for URL:
+      #   https://github.com/gradle/gradle-distributions/releases/download/
+      #   v9.5.0/gradle-9.5.0-all.zip
+      #
+      # 同一份代码的 master 构建 11 分钟前刚成功过，所以不是代码问题，是
+      # GitHub 对这个出口 IP 的限流。
+      #
+      # 做法：只在 CI 里把 distributionUrl 换成国内镜像（实测三个源都是 200，
+      # 且 Content-Length 与官方包一致 = 240667887 字节）。
+      # distributionSha256Sum 保持不变 —— 镜像若给了被动过的包，Gradle
+      # 自己会校验失败并报错，不会被静默装进去。
+      #
+      # 只改 runner 上的工作副本，不提交回仓库：本地构建仍走官方源。
+      - name: Point Gradle at a reachable mirror
+        run: |
+          set -euo pipefail
+          PROP=android/gradle/wrapper/gradle-wrapper.properties
+          # 文件名必须沿用原来的（-all 还是 -bin），否则字节数不同、
+          # distributionSha256Sum 对不上，Gradle 会直接报校验失败。
+          NAME=$(grep -m1 '^distributionUrl=' "$PROP" | sed -E 's#.*/##')
+          [ -n "$NAME" ] || { echo "::error::读不到 gradle 发行包名"; exit 1; }
+          echo "发行包: $NAME"
+          for BASE in \
+            https://mirrors.cloud.tencent.com/gradle \
+            https://repo.huaweicloud.com/gradle \
+            https://mirrors.aliyun.com/macports/distfiles/gradle; do
+            if curl -fsSI --max-time 30 "$BASE/$NAME" >/dev/null 2>&1; then
+              # $BASE 已经含协议头（https://host/path），只需要补 .properties
+              # 要求的「冒号前加反斜杠」转义，别再拼一遍 https://。
+              ESC=$(printf '%s' "$BASE/$NAME" | sed 's#:#\\:#')
+              sed -i "s#^distributionUrl=.*#distributionUrl=${ESC}#" "$PROP"
+              echo "已指向 $BASE/$NAME"
+              grep -n '^distributionUrl=' "$PROP"
+              exit 0
+            fi
+            echo "$BASE 不可达，试下一个"
+          done
+          echo "::warning::镜像都不可达，保留官方源（wrapper 自带重试）"
+
       - name: Build APK
         run: |
           # 只出 arm64：现代手机基本都支持，且能把 native 编译产物砍掉一半
