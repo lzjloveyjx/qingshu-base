@@ -80,6 +80,10 @@ class QingshuPlayback {
       _history ?? (throw StateError('QingshuPlayback 未初始化'));
   static MyController get my =>
       _my ?? (throw StateError('QingshuPlayback 未初始化'));
+  static DownloadController get download =>
+      _download ?? (throw StateError('QingshuPlayback 未初始化'));
+  static DownloadRepository get downloadRepository =>
+      _downloadRepository ?? (throw StateError('QingshuPlayback 未初始化'));
 
   /// 打开 Kazumi 原版播放页。
   ///

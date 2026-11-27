@@ -10,15 +10,23 @@ import 'package:kazumi/pages/download/download_controller.dart';
 import 'package:kazumi/pages/download/download_widgets.dart';
 import 'package:kazumi/pages/video/video_playback_args.dart';
 import 'package:kazumi/services/logging/logger.dart';
+// 注：不 import 主壳的 QingshuPlayback —— 子包不能反向依赖 lib/。
+// 起播所需依赖由宿主通过 offlineVideoOpener 注入。
 import 'package:kazumi/utils/format.dart';
 
 class DownloadPage extends StatefulWidget {
   const DownloadPage({
     super.key,
     required this.controller,
+    this.offlineVideoOpener,
   });
 
   final DownloadController controller;
+
+  /// 起播已下载集的方式。由宿主注入（主壳装配 PlayerController /
+  /// VideoPageController），子包自己拼不出这几个依赖。
+  final void Function(BuildContext, OfflineVideoPlaybackArgs)?
+      offlineVideoOpener;
 
   @override
   State<DownloadPage> createState() => _DownloadPageState();
@@ -268,16 +276,31 @@ class _DownloadPageState extends State<DownloadPage> {
       record.pluginName,
     );
 
-    context.pushNamed(
-      '/video/',
-      arguments: OfflineVideoPlaybackArgs(
-        bangumiItem: bangumiItem,
-        pluginName: record.pluginName,
-        episodeNumber: episode.episodeNumber,
-        road: episode.road,
-        downloadedEpisodes: downloadedEpisodes,
-      ),
+    // 【青枢】原来是 context.pushNamed('/video/')，那是 flutter_modular 的
+    // 扩展。主壳是 Riverpod、没有 ModularApp，这行会静默失效（点了没反应）。
+    // 改成和 QingshuPlayback.open 一样直接构造 VideoPage。
+    final args = OfflineVideoPlaybackArgs(
+      bangumiItem: bangumiItem,
+      pluginName: record.pluginName,
+      episodeNumber: episode.episodeNumber,
+      road: episode.road,
+      downloadedEpisodes: downloadedEpisodes,
     );
+    _openOfflineVideo(args);
+  }
+
+  /// 起播已下载的集。
+  ///
+  /// 【青枢】原来这里是 context.pushNamed('/video/')（flutter_modular 扩展，
+  /// 主壳没有 ModularApp → 点了没反应）。改成让宿主注入一个 opener：
+  /// 子包不能反向 import 主壳的 QingshuPlayback，装配逻辑该由主壳给。
+  void _openOfflineVideo(OfflineVideoPlaybackArgs args) {
+    final opener = widget.offlineVideoOpener;
+    if (opener == null) {
+      KazumiDialog.showToast(message: '当前环境不支持离线播放');
+      return;
+    }
+    opener(context, args);
   }
 
   void _confirmDeleteEpisode(DownloadRecord record, DownloadEpisode episode) {

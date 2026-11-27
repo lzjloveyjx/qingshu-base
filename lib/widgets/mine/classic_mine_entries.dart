@@ -12,6 +12,15 @@ import '../../pages/library_backup_page.dart';
 import '../home/home_design.dart';
 import '../home/home_shelf.dart';
 import '../home/home_sheet.dart';
+import 'package:kazumi/pages/download/download_page.dart';
+import 'package:kazumi/pages/history/history_page.dart';
+import '../../services/anime/qingshu_playback.dart';
+import 'package:kazumi/pages/player/player_controller.dart';
+import 'package:kazumi/pages/video/video_controller.dart';
+import 'package:kazumi/pages/video/video_page.dart';
+import 'package:kazumi/pages/video/video_playback_args.dart';
+import 'package:kazumi/services/download/download_manager.dart';
+import 'package:kazumi/services/player/audio_controller.dart';
 
 /// 手机「我的」的两个主要工具入口。
 ///
@@ -134,6 +143,19 @@ class ClassicMineEntries extends StatelessWidget {
             label: '播放源',
             onTap: () => _push(context, const PlaySourcePage()),
           ),
+          // 动漫的下载管理与观看历史：Kazumi 那边页面是现成的，
+          // 但主壳一直没有入口，等于「下载了找不到、看过也不记得」。
+          // 这两项与「工具」分组无关，任何布局下都要能进。
+          ClassicMineEntryRow(
+            icon: LucideIcons.download,
+            label: '动漫下载',
+            onTap: () => _openAnimeDownloads(context),
+          ),
+          ClassicMineEntryRow(
+            icon: LucideIcons.clock,
+            label: '观看历史',
+            onTap: () => _openAnimeHistory(context),
+          ),
           if (showTools) ...[
             ClassicMineEntryRow(
               icon: LucideIcons.hard_drive_download,
@@ -159,6 +181,60 @@ class ClassicMineEntries extends StatelessWidget {
 
 void _push(BuildContext context, Widget page) =>
     Navigator.push(context, MaterialPageRoute<void>(builder: (_) => page));
+
+/// 打开 Kazumi 的下载管理页。
+///
+/// 需要先 ensureReady：这几套 controller 是进程级的，冷启动直接点进来时
+/// 可能还没装配（用户没进过动漫页）。
+Future<void> _openAnimeDownloads(BuildContext context) async {
+  await QingshuPlayback.ensureReady();
+  if (!context.mounted) return;
+  _push(
+    context,
+    DownloadPage(
+      controller: QingshuPlayback.download,
+      offlineVideoOpener: _openOfflineVideo,
+    ),
+  );
+}
+
+/// 起播已下载的剧集。
+///
+/// 装配与 QingshuPlayback.open 保持一致：PlayerController 要 shaders +
+/// download + audio，VideoPageController 要 history + downloadRepository。
+void _openOfflineVideo(
+  BuildContext context,
+  OfflineVideoPlaybackArgs args,
+) {
+  final playerController = PlayerController(
+    QingshuPlayback.shaders,
+    QingshuPlayback.download,
+    AudioController(),
+  );
+  final videoPageController = VideoPageController(
+    QingshuPlayback.history,
+    QingshuPlayback.downloadRepository,
+    DownloadManager(),
+  );
+  Navigator.of(context).push<void>(
+    MaterialPageRoute<void>(
+      builder: (_) => VideoPage(
+        args: args,
+        playerController: playerController,
+        videoPageController: videoPageController,
+        historyController: QingshuPlayback.history,
+        downloadController: QingshuPlayback.download,
+      ),
+    ),
+  );
+}
+
+/// 打开观看历史。
+Future<void> _openAnimeHistory(BuildContext context) async {
+  await QingshuPlayback.ensureReady();
+  if (!context.mounted) return;
+  _push(context, HistoryPage(controller: QingshuPlayback.history));
+}
 
 /// 小说离线缓存和短剧离线缓存是两套存储，各自有管理页；这里只做分流。
 Future<void> _showCacheChoices(BuildContext context) async {
