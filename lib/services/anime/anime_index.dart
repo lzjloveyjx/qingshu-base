@@ -134,11 +134,12 @@ class AnimeIndex {
 
     final tasks = <Future<List<MediaItem>> Function()>[];
 
-    // 榜单：最多约 1000 条。
-    final popularPages = full ? 14 : 3;
+    // 榜单：镜像单页固定 20 条、offset 上限约 1000，所以最多 50 页。
+    // 步长必须用 browsePageSize（20）——用 50 跳会漏掉 60% 的条目。
+    final popularPages = full ? 50 : 3;
     for (var i = 0; i < popularPages; i++) {
-      final offset = i * 50;
-      tasks.add(() => browsePopular(offset: offset, limit: 50));
+      final offset = i * browsePageSize;
+      tasks.add(() => browsePopular(offset: offset, limit: browsePageSize));
     }
 
     // 季度表：镜像的 calendar/season 接受任意日期区间，**按年请求一次拿全年**

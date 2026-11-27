@@ -4,6 +4,7 @@ import 'package:canvas_danmaku/canvas_danmaku.dart' as canvas;
 import 'package:kazumi/modules/danmaku/danmaku_module.dart';
 import 'package:kazumi/pages/download/download_controller.dart';
 import 'package:kazumi/request/apis/danmaku_api.dart';
+import 'package:kazumi/request/clients/danmaku_client.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:mobx/mobx.dart';
@@ -226,6 +227,12 @@ abstract class _PlayerDanmakuController with Store {
               bangumiID: nextBangumiID,
             );
           }
+        } on DanmakuUnavailableException {
+          // 缺凭证：跳过这个源，不是故障。
+          return DanmakuLoadResult.success(
+            danmakus: const [],
+            bangumiID: nextBangumiID,
+          );
         } catch (e) {
           KazumiLogger().w(
               'PlayerController: failed to fetch danmaku online (may be offline)',
@@ -286,6 +293,12 @@ abstract class _PlayerDanmakuController with Store {
         danmakus: res,
         bangumiID: nextBangumiID,
       );
+    } on DanmakuUnavailableException {
+      // 缺凭证不是故障：属于「这个源没启用」。降级成空结果，不刷 WARNING。
+      return DanmakuLoadResult.success(
+        danmakus: const [],
+        bangumiID: nextBangumiID,
+      );
     } catch (e) {
       KazumiLogger().w(
           'PlayerController: failed to get danmaku [BgmBangumiID] $bgmBangumiID',
@@ -303,6 +316,8 @@ abstract class _PlayerDanmakuController with Store {
       var res = await DanmakuApi.getDanDanmakuByEpisodeID(episodeID);
       addDanmakus(res);
       return res.isNotEmpty;
+    } on DanmakuUnavailableException {
+      return false;
     } catch (e) {
       KazumiLogger().w('PlayerController: failed to get danmaku', error: e);
       rethrow;

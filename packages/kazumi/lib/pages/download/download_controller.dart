@@ -13,6 +13,7 @@ import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
 import 'package:kazumi/services/video_source/services.dart';
 import 'package:kazumi/request/apis/danmaku_api.dart';
+import 'package:kazumi/request/clients/danmaku_client.dart';
 import 'package:mobx/mobx.dart';
 
 part 'download_controller.g.dart';
@@ -726,6 +727,8 @@ abstract class _DownloadController with Store {
 
         KazumiLogger().i(
             'DownloadController: cached ${danmakus.length} danmakus for episode $episodeNumber');
+      } on DanmakuUnavailableException {
+        // 没有 DanDanPlay 凭证：静默跳过，下载本身不受影响。
       } catch (e) {
         // 弹幕获取失败不影响下载
         KazumiLogger()

@@ -25,9 +25,14 @@ class AnimePage extends StatefulWidget {
 class _AnimePageState extends State<AnimePage> {
   static const _tabs = ['排行榜', '本季新番'];
   static const _weekdayLabels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
-  static const _pageSize = 30;
+  // 榜单镜像单页固定回 20 条（limit 传多少都一样），所以分页步长必须是 20，
+  // 否则「已加载 N 条」和真实 offset 对不上，会重复或跳过条目。
+  static const _pageSize = browsePageSize;
 
   int _tab = 0;
+
+  /// 已向镜像请求过的条数（翻页游标，独立于列表长度）。
+  int _loadedOffset = 0;
   bool _loading = true;
   bool _loadingMore = false;
   bool _hasMore = true;
@@ -57,6 +62,7 @@ class _AnimePageState extends State<AnimePage> {
       setState(() {
         _popular = popular;
         _season = season;
+        _loadedOffset = popular.length;
         _hasMore = popular.length >= _pageSize;
         _loading = false;
         _error = (popular.isEmpty && season.every((d) => d.isEmpty))
@@ -76,11 +82,22 @@ class _AnimePageState extends State<AnimePage> {
     if (_loadingMore || !_hasMore) return;
     setState(() => _loadingMore = true);
     try {
-      final more = await browsePopular(offset: _popular.length, limit: _pageSize);
+      // 【青枢】offset 必须用「已请求过的条数」而不是 _popular.length。
+      // 两种情况会让两者不等：① 镜像返回的条目里有解析失败的（标题为空
+      // 会被丢掉）；② 后端返回重复 subject 被去重。用 _popular.length
+      // 会回退 offset，导致一次「加载更多」拉回已经看过的内容。
+      final more = await browsePopular(offset: _loadedOffset, limit: _pageSize);
       if (!mounted) return;
       setState(() {
-        _popular = [..._popular, ...more];
-        _hasMore = more.length >= _pageSize;
+        _loadedOffset += more.length;
+        final existing = _popular.map((item) => item.id).toSet();
+        _popular = [
+          ..._popular,
+          ...more.where((item) => existing.add(item.id)),
+        ];
+        // 镜像 offset 到 1000 就返回空，按「拿满一页」判断是否还有更多。
+        _hasMore = more.length >= _pageSize &&
+            _loadedOffset < animeBrowseMaxOffset;
         _loadingMore = false;
       });
     } catch (_) {

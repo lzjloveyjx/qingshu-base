@@ -136,15 +136,31 @@ List<String> _searchKeywords(Map subject) {
   return out.toList(growable: false);
 }
 
+/// 取第一个非空（trim 后）的字符串。
+String _firstNonEmpty(List<Object?> values) {
+  for (final value in values) {
+    final text = (value ?? '').toString().trim();
+    if (text.isNotEmpty) return text;
+  }
+  return '';
+}
+
 /// 一条 Bangumi subject → MediaItem。
 MediaItem? _toItem(Map subject) {
   final id = subject['id'];
   if (id is! int) return null;
-  // 镜像的字段名是 nameCN（不是 nameCn），新老两种都认。
-  final name = (subject['nameCN'] ?? subject['nameCn'] ?? subject['name_cn'] ??
-          subject['name'] ?? '')
-      .toString()
-      .trim();
+  // 镜像的字段名是 nameCN / name_cn，新老两种都认。
+  //
+  // 注意不能用 `??` 串起来：Bangumi 对没有中文译名的条目返回的是空字符串
+  // 而不是 null，`??` 只在 null 时回退，于是 title 变成空串，下面
+  // `title.isEmpty` 直接把条目丢掉。实测「CLANNAD 〜AFTER STORY〜」
+  // 的 name_cn 就是 ""，加进榜单后会整条消失。这里按「非空」逐级回退。
+  final name = _firstNonEmpty([
+    subject['nameCN'],
+    subject['nameCn'],
+    subject['name_cn'],
+    subject['name'],
+  ]);
   final original = (subject['name'] ?? '').toString().trim();
   final title = name.isNotEmpty ? name : original;
   if (title.isEmpty) return null;
@@ -176,11 +192,123 @@ MediaItem? _toItem(Map subject) {
   );
 }
 
-/// 榜单（镜像 /kazumi/v1/popular/subjects）。
-Future<List<MediaItem>> browsePopular({int offset = 0, int limit = 24}) async {
+/// 榜单。
+///
+/// 【青枢】原来只走镜像 /kazumi/v1/popular/subjects，2026-11-27 起这个端点
+/// 稳定返回 502（同一台机器上 calendar/season 和 app/latest 都是 200，
+/// 所以不是网络问题，是上游那条路径挂了）。表现就是「排行榜刷新不出来」。
+///
+/// 现在改成三级回退，任意一级拿到就返回：
+///   1. bgmapi.anibt.net 全量镜像的 /v0/search/subjects，sort=rank
+///      —— 这是 Bangumi 官方排名（rank 1 是攻壳 S.A.C. 2nd GIG），
+///      比原来的 popular 更贴合「排行榜」这个标题。
+///   2. 同一个镜像的 sort=heat —— 按收藏人数排的热门榜，绕开 rank>0 过滤
+///      可能有遗漏的情况。
+///   3. 原来的 kazumi 镜像 popular —— 万一上游恢复了就当兜底。
+Future<List<MediaItem>> browsePopular({
+  int offset = 0,
+  int limit = browsePageSize,
+}) async {
+  for (final loader in <Future<List<MediaItem>> Function()>[
+    () => _browseByRank(offset: offset, limit: limit),
+    () => _browseByHeat(offset: offset, limit: limit),
+    () => _browseKazumiPopular(offset: offset, limit: limit),
+  ]) {
+    try {
+      final items = await loader();
+      if (items.isNotEmpty) return items;
+    } catch (e) {
+      debugPrint('anime browsePopular fallback failed: ' + e.toString());
+    }
+  }
+  return const [];
+}
+
+/// 按 Bangumi 官方排名取榜单。
+///
+/// filter 里的 rank: >0 是必须的：不加过滤时 sort=rank 会把 rank 为 0 的
+/// 冷门条目排在前面（实测前八条全是无人评分的古董动画）。
+Future<List<MediaItem>> _browseByRank({
+  int offset = 0,
+  int limit = 24,
+}) =>
+    _searchSubjects(
+      offset: offset,
+      limit: limit,
+      sort: 'rank',
+      filter: {
+        'type': [2],
+        'rank': ['>0'],
+      },
+    );
+
+/// 按收藏人数（热度）取榜单。
+Future<List<MediaItem>> _browseByHeat({
+  int offset = 0,
+  int limit = 24,
+}) =>
+    _searchSubjects(
+      offset: offset,
+      limit: limit,
+      sort: 'heat',
+      filter: {
+        'type': [2],
+        'rank': ['>0'],
+      },
+    );
+
+/// 镜像的单页上限。
+///
+/// 实测 bgmapi.anibt.net 的 /v0/search/subjects **无论 limit 传多少都只回 20 条**
+/// （limit=24/30/50 都是 20），且 offset 按「实际返回条数」推进。所以翻页时
+/// 必须用 [browsePageSize] 作步长——按 30 或 50 跳会漏掉中间条目。
+const int browsePageSize = 20;
+
+/// 镜像允许的最大 offset。超过它一律返回空数组（实测 offset=1000 开始为空），
+/// 所以榜单最多只能取到约 1000 条。
+const int _kMaxBrowseOffset = 1000;
+
+/// 榜单最多能翻到这里（对页面暴露，用来判断「还有没有更多」）。
+const int animeBrowseMaxOffset = _kMaxBrowseOffset;
+
+Future<List<MediaItem>> _searchSubjects({
+  required int offset,
+  required int limit,
+  required String sort,
+  required Map<String, dynamic> filter,
+}) async {
+  if (offset >= _kMaxBrowseOffset) return const [];
+  final data = await _postJson(
+    _kSearchMirror +
+        '/v0/search/subjects?limit=' + limit.toString() +
+        '&offset=' + offset.toString(),
+    {
+      'keyword': '',
+      'sort': sort,
+      'filter': filter,
+    },
+  );
+  if (data is! Map) return const [];
+  final list = data['data'];
+  if (list is! List) return const [];
+  final out = <MediaItem>[];
+  for (final row in list) {
+    if (row is! Map) continue;
+    final item = _toItem(row);
+    if (item != null) out.add(item);
+  }
+  return out;
+}
+
+/// 最后兜底：Kazumi 自建镜像的老榜单端点。
+Future<List<MediaItem>> _browseKazumiPopular({
+  int offset = 0,
+  int limit = 24,
+}) async {
   final data = await _getJson(
-    _kMirror + '/kazumi/v1/popular/subjects?limit=' + limit.toString() +
-    '&offset=' + offset.toString(),
+    _kMirror +
+        '/kazumi/v1/popular/subjects?limit=' + limit.toString() +
+        '&offset=' + offset.toString(),
   );
   if (data is! Map) return const [];
   final list = data['data'];

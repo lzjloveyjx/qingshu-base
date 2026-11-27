@@ -17,6 +17,7 @@ import 'package:kazumi/modules/danmaku/danmaku_episode_response.dart';
 import 'package:kazumi/modules/danmaku/danmaku_search_response.dart';
 import 'package:kazumi/pages/player/controller/player_danmaku_controller.dart';
 import 'package:kazumi/request/apis/danmaku_api.dart';
+import 'package:kazumi/request/clients/danmaku_client.dart';
 import 'package:kazumi/services/logging/logger.dart';
 import 'package:kazumi/services/storage/storage.dart';
 
@@ -165,6 +166,12 @@ class _DanmakuSourceSheetState extends State<_DanmakuSourceSheet> {
         _animes = response.animes;
         _hasMore = response.hasMore;
         if (response.animes.isEmpty) _error = '未找到番剧';
+      });
+    } on DanmakuUnavailableException {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = '未配置 DanDanPlay 凭证，该源不可用';
       });
     } catch (error) {
       KazumiLogger().w('Danmaku source search failed', error: error);
