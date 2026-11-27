@@ -287,7 +287,14 @@ class _PlayerItemState extends State<PlayerItem>
       return;
     }
     if (!supported) {
-      KazumiDialog.showToast(message: '当前设备不支持画中画');
+      // 【青枢】isAndroidPIPSupported 走的是 Kazumi 自己的 PiP 原生插件，
+      // 青枢没有移植，所以这里恒为 false。原来的提示是「当前设备不支持
+      // 画中画」—— 设备其实支持，是我们的壳里没这块代码，说实话。
+      KazumiDialog.showToast(
+        message: PipUtils.androidPIPAvailable && !PipUtils.androidPIPDeviceSupported
+            ? '当前设备不支持画中画'
+            : '本机未内置画中画支持，该功能暂不可用',
+      );
       return;
     }
     setState(() {
@@ -1296,6 +1303,9 @@ class _PlayerItemState extends State<PlayerItem>
         },
         onModeChanged: _handleAndroidPIPModeChanged,
       );
+      // 【青枢】先探测一次原生通道是否存在。不存在就只记一条 info，
+      // 后面所有 PiP 同步调用会直接返回，不再往缺失的通道上刷 ERROR。
+      unawaited(PipUtils.isAndroidPIPSupported());
       unawaited(_syncAndroidAutoEnterPIPSetting());
       unawaited(_syncAndroidPIPPlayerPageState(true));
       unawaited(_updateAndroidPIPActions(force: true));

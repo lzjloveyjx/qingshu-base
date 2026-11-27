@@ -79,6 +79,14 @@ abstract class _PlayerPlaybackController with Store {
   final AsyncSerialQueue _prefetchWrites = AsyncSerialQueue();
   bool _prefetchSuspendWanted = false;
 
+  /// 最近一次 open 用的请求头。运行中因为要切软解而重开时得原样带上，
+  /// 否则带 Referer 校验的源会直接 403。
+  Map<String, String> _lastHttpHeaders = const <String, String>{};
+
+  /// 是否因为开超分而改过解码器。关掉超分时要能还原，否则会一直停在
+  /// copy-back 上（虽然仍走硬解，但每帧多一次拷贝）。
+  bool _hwdecAdjustedForSuperRes = false;
+
   bool hAenable = true;
   late String hardwareDecoder;
   bool androidEnableOpenSLES = true;
@@ -274,6 +282,7 @@ abstract class _PlayerPlaybackController with Store {
     VideoSourceFormat videoSourceFormat = VideoSourceFormat.auto,
   }) async {
     startOffset = offset;
+    _lastHttpHeaders = Map<String, String>.from(httpHeaders);
     superResolutionMode = SuperResolutionMode.fromStorageValue(
       GStorage.getSetting(SettingsKeys.defaultSuperResolutionMode),
     );
@@ -408,6 +417,30 @@ abstract class _PlayerPlaybackController with Store {
         superResolutionMode = SuperResolutionMode.off;
       }
 
+      // 【青枢】超分辨率要真的生效，硬解必须关掉。
+      //
+      // Anime4K 是 mpv 的 GLSL 用户着色器，pipline 只在 vo=gpu/gpu-next
+      // 且帧能被当纹理采样的前提下跑。Android 上 hwdec=auto-safe 会命中
+      // MediaCodec 直通（surface 直出），帧根本不经过 GL —— 这时
+      // `change-list glsl-shaders set` 会返回成功、日志也没有报错，但画面
+      // 一模一样。表现就是「超分辨率按钮没生效」。
+      //
+      // 所以开着超分时强制软件解码 + 指定的渲染器。代价是功耗和发热，
+      // 这也是为什么这一步只在用户真的选了效率档/质量档时才做。
+      if (Platform.isAndroid &&
+          superResolutionMode != SuperResolutionMode.off) {
+        final preferred = _copyBackHwdec(hardwareDecoder);
+        if (preferred != hardwareDecoder) {
+          KazumiLogger().i(
+            'SuperResolution: hwdec $hardwareDecoder -> $preferred '
+            '（直通解码的帧不是纹理，Anime4K 取不到）',
+          );
+        }
+        hAenable = preferred != 'no';
+        hardwareDecoder = preferred;
+        _hwdecAdjustedForSuperRes = true;
+      }
+
       videoController ??= VideoController(
         player,
         configuration: VideoControllerConfiguration(
@@ -451,8 +484,13 @@ abstract class _PlayerPlaybackController with Store {
                 showActionButton: true);
           }
         }
-        KazumiLogger().e('PlayerController: Player intent error ${videoUrl()}',
-            error: event);
+        // 青枢：这条日志原来叫 "Player intent error"，容易和 Android
+        // Intent 混淆，其实是 mpv 的 error 流。改成能直接看懂的说法，
+        // 并把 URL 放在原因后面 —— 读日志时先看到错什么。
+        KazumiLogger().e(
+          'PlayerController: 播放出错 ${videoUrl()}',
+          error: event,
+        );
       });
 
       if (superResolutionMode != SuperResolutionMode.off) {
@@ -475,6 +513,7 @@ abstract class _PlayerPlaybackController with Store {
       final String hwdecDesc = hAenable ? hardwareDecoder : "no";
       KazumiLogger().i(
         'PlayerOpen: url=${videoUrl()} vo=$videoRenderer hwdec=$hwdecDesc '
+        'superres=${superResolutionMode.label} '
         'offset=$offset headers=${httpHeaders.keys.toList()}',
       );
       final sw = Stopwatch()..start();
@@ -508,6 +547,32 @@ abstract class _PlayerPlaybackController with Store {
     }
   }
 
+  /// 把「直通」硬解换成「拷贝回内存」的硬解。
+  ///
+  /// Anime4K 是 GLSL 用户着色器，要拿到帧像素才能采样。Android 上
+  /// hwdec=auto-safe 命中的是 MediaCodec 直通（surface 直出，帧不经过
+  /// 内存），着色器静默失效 —— 这就是「超分辨率按钮没生效」的真正原因。
+  ///
+  /// 正确的解法不是退回纯软解（那样 1080p 解码会烫手掉帧），而是用
+  /// copy-back 变体：仍然是硬件解码，只是把结果拷回系统内存当纹理用。
+  /// 代价是每帧一次拷贝，比软解轻得多。
+  static String _copyBackHwdec(String configured) {
+    final value = configured.trim();
+    if (value.isEmpty || value == 'no') {
+      return 'no';
+    }
+    if (value.endsWith('-copy')) {
+      return value;
+    }
+    // mpv 的特殊值只有 no / auto / auto-safe / auto-copy / yes（yes 是
+    // auto 的旧别名）。没有 auto-safe-copy 这种东西 —— 硬拼会变成非法
+    // 参数，mpv 直接忽略，等于没切。所以 auto 系列统一落到 auto-copy。
+    if (value == 'auto' || value == 'auto-safe' || value == 'yes') {
+      return 'auto-copy';
+    }
+    return '$value-copy';
+  }
+
   Future<void> setShader(SuperResolutionMode mode, {Player? player}) async {
     final currentPlayer = player ?? mediaPlayer;
     if (currentPlayer == null) return;
@@ -529,17 +594,94 @@ abstract class _PlayerPlaybackController with Store {
           ? shaderDir.listSync().whereType<File>().length
           : 0;
       String? vo;
+      String? hwdec;
       try {
         vo = await pp.getProperty('vo');
+        // hwdec 是配置项，hwdec-current 才是真正在用的解码器。
+        hwdec = await pp.getProperty('hwdec-current');
+        if (hwdec.trim().isEmpty) {
+          hwdec = await pp.getProperty('hwdec');
+        }
       } catch (_) {}
       KazumiLogger().i(
-        'SuperResolution: mode=$mode dir=${shaderDir.path} '
-        'exists=$dirExists files=$fileCount vo=$vo',
+        'SuperResolution: mode=${mode.label} dir=${shaderDir.path} '
+        'exists=$dirExists files=$fileCount vo=$vo hwdec=$hwdec',
       );
       if (!dirExists || fileCount == 0) {
         KazumiLogger().e('SuperResolution: 着色器目录为空，超分不会生效');
         superResolutionMode = mode;
         return;
+      }
+      if (Platform.isAndroid && mode != SuperResolutionMode.off) {
+        // 【青枢】mediacodec_embed 是硬解直出，压根没有 GL 管线，
+        // glsl-shaders 只会静默失效。除此之外的 vo（gpu / gpu-next /
+        // 初始化中的 null）都不拦 —— 尤其是 'null'，那是 media_kit 在
+        // surface 还没就绪时的正常占位，不是错误。
+        final currentVo = (vo ?? '').trim();
+        if (currentVo == 'mediacodec_embed') {
+          KazumiLogger().e(
+            'SuperResolution: vo=mediacodec_embed 不跑 GLSL 着色器。'
+            '请把「视频渲染器」改为 auto / gpu / gpu-next',
+          );
+          superResolutionMode = mode;
+          return;
+        }
+        // 直通硬解（不带 -copy）会让着色器静默失效；copy-back 变体既能
+        // 保留硬件解码，帧又能被 GL 当纹理采样。auto-safe 也可能命中
+        // 直通，所以以「回读到的值是否带 -copy」作为判断依据。
+        //
+        // 另外：光 setProperty('hwdec', ...) 是不够的 —— mpv 不会在播放
+        // 中途重建解码器，日志上看着切换成功，画面照样是原来的路径。必须
+        // 带着新参数重新 open 一次当前 URL。这里保留播放位置与请求头。
+        final bool passthrough =
+            hwdec != null && hwdec.isNotEmpty && !hwdec.endsWith('-copy') &&
+                hwdec != 'no';
+        if (passthrough) {
+          final position = currentPlayer.state.position;
+          final target = _copyBackHwdec(
+            GStorage.getSetting(SettingsKeys.hardwareDecoder),
+          );
+          KazumiLogger().i(
+            'SuperResolution: hwdec=$hwdec 是直通解码，重开并切到 $target',
+          );
+          await pp.setProperty('hwdec', target);
+          await currentPlayer.open(
+            Media(
+              videoUrl(),
+              start: position,
+              httpHeaders: _lastHttpHeaders,
+            ),
+            play: currentPlayer.state.playing,
+          );
+          _hwdecAdjustedForSuperRes = true;
+        }
+      }
+      // 关掉超分时把被强制关掉的硬解还原回来，并同样靠重开生效。
+      if (Platform.isAndroid &&
+          mode == SuperResolutionMode.off &&
+          _hwdecAdjustedForSuperRes) {
+        _hwdecAdjustedForSuperRes = false;
+        hAenable = GStorage.getSetting(SettingsKeys.hAenable);
+        hardwareDecoder = hAenable
+            ? GStorage.getSetting(SettingsKeys.hardwareDecoder)
+            : 'no';
+        try {
+          final position = currentPlayer.state.position;
+          KazumiLogger().i(
+            'SuperResolution: 关闭超分，恢复硬解 hwdec=$hardwareDecoder',
+          );
+          await pp.setProperty('hwdec', hAenable ? hardwareDecoder : 'no');
+          await currentPlayer.open(
+            Media(
+              videoUrl(),
+              start: position,
+              httpHeaders: _lastHttpHeaders,
+            ),
+            play: currentPlayer.state.playing,
+          );
+        } catch (e) {
+          KazumiLogger().w('SuperResolution: 恢复硬解失败', error: e);
+        }
       }
       switch (mode) {
         case SuperResolutionMode.efficiency:
@@ -569,9 +711,15 @@ abstract class _PlayerPlaybackController with Store {
           break;
       }
       superResolutionMode = mode;
+      // 回读 mpv 里真正的 glsl-shaders —— 命令发出去不代表加载成功，
+      // 只有回读非空才说明这套着色器真的挂上了。
+      String? applied;
+      try {
+        applied = await pp.getProperty('glsl-shaders');
+      } catch (_) {}
       KazumiLogger().i(
-        'SuperResolution: applied mode=$mode shaders=' 
-        '${mode == SuperResolutionMode.off ? "cleared" : buildShadersAbsolutePath(shaderDir.path, mode == SuperResolutionMode.quality ? mpvAnime4KShaders : mpvAnime4KShadersLite)}',
+        'SuperResolution: applied mode=${mode.label} '
+        'glsl-shaders=${(applied ?? "").trim().isEmpty ? "（空，未加载）" : applied}',
       );
     } catch (e, stack) {
       KazumiLogger().w(

@@ -11,10 +11,41 @@ import 'package:kazumi/utils/device.dart';
 /// Android 插件实现的（MainActivity + PipPlugin），青枢没有移植，所以
 /// 这些方法必然抛 MissingPluginException —— 它是 PlatformException 的
 /// 兄弟类，原来 `on PlatformException` 抓不到，异常会冒到 zone 变成
-/// 「未捕获异步异常」。这里统一改成宽 catch：画中画不可用属于功能降级，
-/// 不该影响播放本身。
+/// 「未捕获异步异常」。
+///
+/// 现在的策略：
+///   1) 第一次探测发现通道不存在，就把 [_channelAvailable] 记为 false；
+///   2) 之后所有调用直接返回，不再往原生通道发请求 —— 否则播放页每帧
+///      同步一次 PiP 动作，日志会被同一条 ERROR 刷满，把真正的错误淹掉；
+///   3) 只打一条 info 说明「画中画不可用」，不当作错误。
 class PipUtils {
   static bool androidPIPInited = false;
+
+  /// 原生通道是否可用。null = 还没探测过。
+  static bool? _channelAvailable;
+
+  /// 设备本身是否支持画中画（只有通道可用时才有意义）。
+  static bool? _deviceSupported;
+
+  /// 通道可用 / 设备支持 是两件事：
+  ///   - 通道缺失（青枢没移植 Kazumi 的 PiP 插件）→ 是我们的问题
+  ///   - 通道在但返回 false → 是设备/系统不支持
+  /// 提示文案必须分开，否则会把「我们没做」说成「你的设备不行」。
+  static bool get androidPIPAvailable => _channelAvailable ?? false;
+
+  static bool get androidPIPDeviceSupported => _deviceSupported ?? false;
+
+  static bool get _available => _channelAvailable != false;
+
+  static void _markUnavailable(Object error) {
+    if (_channelAvailable == false) return;
+    _channelAvailable = false;
+    _deviceSupported = false;
+    KazumiLogger().i(
+      'PiP: 原生通道 com.predidit.kazumi/pip 不可用，画中画功能停用'
+      '（${error.runtimeType}）',
+    );
+  }
 
   // 比例约分
   static Size getPIPAspectSize({required int width, required int height}) {
@@ -29,20 +60,27 @@ class PipUtils {
     if (!Platform.isAndroid) {
       return false;
     }
+    // 注意不要在这里返回 _channelAvailable —— 那是「通道在不在」，
+    // 不等于「能不能用画中画」。设备不支持时也必须返回 false。
+    if (_channelAvailable != null) {
+      return _channelAvailable! && (_deviceSupported ?? false);
+    }
     const pipChannel = MethodChannel('com.predidit.kazumi/pip');
     try {
       final bool? supported =
           await pipChannel.invokeMethod('isPictureInPictureSupported');
-      return supported ?? false;
+      _channelAvailable = true;
+      _deviceSupported = supported ?? false;
+      return _deviceSupported!;
     } catch (e) {
-      KazumiLogger().e("Failed to check Android PIP support: '${e}'.");
+      _markUnavailable(e);
       return false;
     }
   }
 
   static Future<bool> enterAndroidPIPWindow(
       {int width = 16, int height = 9}) async {
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid || !_available) {
       return false;
     }
     final Size aspectSize = getPIPAspectSize(width: width, height: height);
@@ -55,7 +93,7 @@ class PipUtils {
       });
       return entered ?? false;
     } catch (e) {
-      KazumiLogger().e("Failed to enter Android PIP mode: '${e}'.");
+      _markUnavailable(e);
       return false;
     }
   }
@@ -67,7 +105,7 @@ class PipUtils {
     int height = 9,
     Rect? sourceRect,
   }) async {
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid || !_available) {
       return;
     }
     final Size aspectSize = getPIPAspectSize(width: width, height: height);
@@ -86,12 +124,12 @@ class PipUtils {
         },
       });
     } catch (e) {
-      KazumiLogger().e("Failed to update Android PIP actions: '${e}'.");
+      _markUnavailable(e);
     }
   }
 
   static Future<void> setAndroidAutoEnterPIPEnabled(bool enabled) async {
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid || !_available) {
       return;
     }
     const pipChannel = MethodChannel('com.predidit.kazumi/pip');
@@ -100,13 +138,12 @@ class PipUtils {
         'enabled': enabled,
       });
     } catch (e) {
-      KazumiLogger().e(
-          "Failed to set Android auto-enter PIP enabled state: '${e}'.");
+      _markUnavailable(e);
     }
   }
 
   static Future<void> setAndroidPIPInPlayerPage(bool inPlayerPage) async {
-    if (!Platform.isAndroid) {
+    if (!Platform.isAndroid || !_available) {
       return;
     }
     const pipChannel = MethodChannel('com.predidit.kazumi/pip');
@@ -115,7 +152,7 @@ class PipUtils {
         'inPlayerPage': inPlayerPage,
       });
     } catch (e) {
-      KazumiLogger().e("Failed to set Android PIP page state: '${e}'.");
+      _markUnavailable(e);
     }
   }
 

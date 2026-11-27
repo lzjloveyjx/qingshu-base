@@ -96,15 +96,14 @@ abstract class _PlayerDebugController with Store {
     playerAudioBitrateSubscription = player.stream.audioBitrate.listen((event) {
       playerAudioBitrate = event.toString();
     });
-    await playerVideoBitrateSubscription?.cancel();
-    if (!isCurrentPlayer(player)) return;
     // 青枢：Kazumi 依赖的 media-kit 分支多了 videoBitrate 流，pub.dev 的
-    // 1.2.6 没有。这里用 videoParams 的码率字段（如果有）顶替，没有就留空。
-    playerVideoBitrateSubscription =
-        player.stream.videoParams.listen((event) {
-      final bitrate = (event as dynamic).bitrate;
-      playerVideoBitrate = bitrate == null ? '' : bitrate.toString();
-    });
+    // 1.2.6 没有。曾经用 (event as dynamic).bitrate 顶替 —— 但 VideoParams
+    // 根本没有 bitrate 字段，于是每次 videoParams 变化都抛 NoSuchMethodError，
+    // 又因为发生在 stream 回调里，直接变成「未捕获异步异常」刷屏。
+    // 现在不订阅：详情页显示「未知」即可，别拿假数据填。
+    await playerVideoBitrateSubscription?.cancel();
+    playerVideoBitrateSubscription = null;
+    playerVideoBitrate = '';
   }
 
   Future<void> cancel() async {
