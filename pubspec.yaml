@@ -92,7 +92,17 @@ dependencies:
   # 青枢：动漫播放内核。之前刻意不装（只出小说），第 2 期开始要塞 libmpv 进
   # APK —— 这是「能播放」的唯一硬前提，没有它播放页一进去就黑屏。
   # 代价：APK 从 ~45 MB 涨到 ~56 MB。
-  media_kit_libs_android_video: 1.3.8
+  # 【青枢】本地 fork：只把 libmpv 换成 Predidit 编译的 v1.3.1。
+  #
+  # 官方包拉的是 media-kit/libmpv-android-video-build v1.1.7（arm64 11.8 MB），
+  # 而 Kazumi 原版用的 media_kit 指向 Predidit 的 git 分支，拉的是
+  # Predidit/libmpv-android-video-build v1.3.1（arm64 21.8 MB）。
+  # 两份二进制不同（sha256 都对不上，体积差近一倍），表现就是同样源同样网络下
+  # Kazumi 流畅、青枢卡顿。这里只换二进制，不动 Dart 层 API。
+  #
+  # 细节与校验值见 third_party/media_kit_libs_android_video/android/build.gradle。
+  media_kit_libs_android_video:
+    path: third_party/media_kit_libs_android_video
   wakelock_plus: ^1.5.2
   file_selector: ^1.1.0
   flutter_tts: ^4.2.5
