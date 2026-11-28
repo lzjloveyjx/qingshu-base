@@ -483,9 +483,14 @@ flutter analyze --no-pub lib                      → 0 error
 flutter analyze --no-pub packages/kazumi/lib      → 4 error
 ```
 
-那 4 个 error 全在 `packages/kazumi/lib/pages/menu/menu.dart`，
+那 4 个 error 曾经全在 `packages/kazumi/lib/pages/menu/menu.dart`，
 引用了不存在的 `pages/router.dart` —— 是 Kazumi 自己的旧壳死代码，
 主壳没用到。**改动前就存在，不是新引入的。**
+
+> **2026-11-28 已清理。** 这条死链是 `IndexPage` → `ScaffoldMenu` → `router.dart`，
+> 其中 `IndexPage` 全仓无引用、`ScaffoldMenu` 只被 `IndexPage` 用，
+> 两个文件一起删掉（`d7f8583`）。现在 `flutter analyze` 对两个包都是 **0 error**。
+> `route_visibility.dart` 仍被 `my_page.dart` 使用，保留。
 
 如果哪天要清理，整个文件删掉即可（确认没有引用）。
 
@@ -556,6 +561,6 @@ flutter analyze --no-pub packages/kazumi/lib      → 4 error
 |---|---|
 | 删漫画模块（`comic_reader_page.dart` + `comic/` + `widgets/comic/`，1565 行） | 它是**活的**：`detail_page.dart:2542` 有跳转、首页有「漫画」tab。删它对体积几乎没帮助（Dart 代码只是几十万行总量的一小部分），收益只是少一块维护面。要做就当独立任务，别混在瘦身里 |
 | 字体 | `assets/fonts` 里 NotoSerifSC Bold + Regular 共 5.1 MB。只用一种字重可省 2.6 MB，但影响阅读器排版观感，得先确认 |
-| `packages/kazumi/lib/pages/menu/menu.dart` 那 4 个历史 error | 引用不存在的 `pages/router.dart`，是 Kazumi 旧壳死代码。确认无引用后整个文件删掉即可 |
+| ~~`packages/kazumi/lib/pages/menu/menu.dart` 那 4 个历史 error~~ | **已完成**（`d7f8583`）：连同 `index_page.dart` 一起删掉，0 error |
 
 
