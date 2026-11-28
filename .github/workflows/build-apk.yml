@@ -15,6 +15,18 @@ concurrency:
 
 env:
   FLUTTER_VERSION: '3.50.1'
+  # 【青枢】runner 在海外，走阿里云镜像反而更慢且会挂。
+  #
+  # settings.gradle.kts 的 useMirrors 判断是「!= 'false' 就开」——也就是默认开。
+  # 不显式关掉，CI 就会优先去 maven.aliyun.com 拉依赖，那边时不时 502：
+  #
+  #   Could not GET '.../maven.aliyun.com/repository/google/.../FastInfoset-1.2.16.pom'
+  #     > Received status code 502 from server: Bad Gateway
+  #   > There are 42 more failures with identical causes.
+  #
+  # 2026-11-28 的 v2.6.2 tag 构建就是挂在这里（同代码的 master 构建是成功的，
+  # 说明不是代码问题）。android-apk.yml 早就设了这个变量，build-apk.yml 漏了。
+  FQAPP_USE_MAVEN_MIRRORS: 'false'
 
 jobs:
   # 【青枢】出包前的质量门。
