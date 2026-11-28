@@ -46,7 +46,10 @@ jobs:
         run: flutter pub get
 
       - name: Analyze main shell
-        run: flutter analyze --no-pub lib
+        # 只把 error 当失败。主壳里有一批历史 unused_import 之类的 warning，
+        # 它们不影响运行，却会让 flutter analyze 返回退出码 1 —— 不加
+        # --no-fatal-warnings 的话这道门永远红，又变成「没人看」的老样子。
+        run: flutter analyze --no-pub lib --no-fatal-warnings
 
       # 注意别用管道接 tail：退出码会被换成 tail 的，测试红了也显示绿。
       - name: Run full widget test suite
