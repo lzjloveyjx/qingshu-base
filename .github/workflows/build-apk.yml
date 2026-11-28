@@ -66,11 +66,30 @@ jobs:
           echo "只有 warning / info，放行"
 
       # 注意别用管道接 tail：退出码会被换成 tail 的，测试红了也显示绿。
+      #
+      # 但也不能只留尾巴：compact reporter 的失败详情（Expected/Actual/堆栈）
+      # 打在**该用例执行的位置**，跑到几千个用例后早被 tail 截没了 ——
+      # 上一轮就是这样，只知道「-18」却看不到是哪 18 个、错在哪。
+      # 现在全文落盘，失败时把摘要和第一个失败块打出来。
       - name: Run full widget test suite
         shell: bash
         run: |
           set -o pipefail
-          flutter test --no-pub --concurrency=4 --reporter compact 2>&1 | tail -200
+          set +e
+          flutter test --no-pub --concurrency=4 --reporter compact > /tmp/test.log 2>&1
+          status=$?
+          set -e
+          if [ $status -ne 0 ]; then
+            echo '=== 失败用例清单 ==='
+            grep -E '\[E\]' /tmp/test.log | sed -E 's/.*(test\/[^ ]+\.dart): //; s/ \[E\].*//' | sort -u || true
+            echo '=== 第一个失败详情 ==='
+            awk '/EXCEPTION CAUGHT/{p=1} p' /tmp/test.log | head -60 || true
+            echo '=== 末尾 40 行 ==='
+            tail -40 /tmp/test.log
+          else
+            tail -5 /tmp/test.log
+          fi
+          exit $status
 
   build:
     needs: test
