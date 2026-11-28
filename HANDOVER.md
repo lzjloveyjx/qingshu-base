@@ -552,6 +552,47 @@ flutter analyze --no-pub packages/kazumi/lib      → 4 error
 
 > 换人接手先看这一节：谁改了什么、为什么改、哪些是**刻意不动**的。
 
+### 2026-11-28 · v2.6.2 —— 播放卡顿的根因是 libmpv 二进制
+
+**现象**：同样的源、同样的网络，Kazumi 原版播放流畅，青枢卡顿且经常加载失败。
+
+**不是代码问题，是二进制问题。**
+
+| | libmpv 来源 | arm64 体积 | sha256 |
+|---|---|---|---|
+| 青枢原来用的 | media-kit 官方 **v1.1.7** | 11.8 MB | `adf83fde…` |
+| Kazumi 用的 | Predidit **v1.3.1** | 21.8 MB | `0a40f524…` |
+
+追踪路径：
+
+1. Kazumi 的 `pubspec.yaml` 里 `media_kit` 指向 **Predidit/media-kit 的 git 分支**（commit `484639ac`），
+   不是 pub.dev 版本
+2. 那个分支的 `media_kit/hook/native_bundles.json` 拉的是
+   `Predidit/libmpv-android-video-build` **v1.3.1**
+3. 青枢用的是 pub.dev 的 `media_kit_libs_android_video 1.3.8`，
+   它的 `android/build.gradle` 里写死拉 `media-kit/libmpv-android-video-build` **v1.1.7**
+
+两份 `.so` 体积差近一倍，编进去的解码器/滤镜不同 —— 这就是「同样源同样网络，一个流畅一个卡」的原因。
+
+**改法**（`third_party/media_kit_libs_android_video/`）：
+
+把 `media_kit_libs_android_video` 本地 fork 一份，只改 `android/build.gradle` 里的
+下载地址与校验值（md5 → sha256），**不动 `media_kit` / `media_kit_video` 的 Dart 包**。
+
+> 为什么不用 HANDOVER 6.1 说的「直接依赖 Predidit 分支」：那会牵出
+> `js` / `flutter_secure_storage` 一串传递依赖冲突，改动面太大。
+> 只换二进制则 API 完全兼容，风险小得多。
+
+下载加了 gh-proxy 回退（国内本地构建用得上；CI 直连即可）。四个 ABI 全部保留。
+
+**代价**：APK 64.2 MB → **74.2 MB**。
+
+**同版本还修了**：`build-apk.yml` 没设 `FQAPP_USE_MAVEN_MIRRORS: 'false'`，
+runner 在海外会优先走阿里云，撞 502 导致发版失败
+（`FastInfoset-1.2.16.pom ... status code 502`）。`android-apk.yml` 早就设了，这边漏了。
+
+---
+
 ### 2026-11-28 · v2.6.1 发版（瘦身 + 修 CI）
 
 **发版结果**
