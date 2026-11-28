@@ -7,7 +7,8 @@ import 'package:fqapp/widgets/settings/settings_widgets.dart';
 import 'package:fqapp/widgets/wenku/wenku_ui.dart';
 
 /// 关于页改版后的结构与交互：全部信息行齐备、版本行点按复制、开源许可
-/// 打开框架许可页、微信赞赏打开赞赏码弹窗。
+/// 打开框架许可页。基底的「支持作者」卡（爱发电 + 微信赞赏）在青枢里已移除，
+/// 这里断言它不出现。
 void main() {
   Future<void> pumpAbout(WidgetTester tester) async {
     // 页面内容高于默认 800x600 视口，ListView 外的行不会被构建；
@@ -30,7 +31,7 @@ void main() {
     expect(find.text('青枢'), findsWidgets);
     expect(find.textContaining('日轻小说 + 番剧聚合客户端'), findsOneWidget);
     // 介绍是一段正文，不再是「项目介绍」标题行。
-    expect(find.textContaining('所有签名与解密都在你的手机本地完成'), findsOneWidget);
+    expect(find.textContaining('数据与播放全部在本地完成'), findsOneWidget);
     expect(find.text('项目介绍'), findsNothing);
 
     expect(find.text('当前版本'), findsOneWidget);

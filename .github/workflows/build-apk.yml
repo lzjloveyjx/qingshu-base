@@ -90,7 +90,12 @@ jobs:
           if [ $status -ne 0 ]; then
             echo '=== 失败用例清单 ==='
             grep -E '\[E\]' /tmp/test.log | sed -E 's/.*(test\/[^ ]+\.dart): //; s/ \[E\].*//' | sort -u || true
-            echo '=== 第一个失败详情 ==='
+            # 只打第一个失败块时，后面的失败完全看不见（上一轮就是这样，
+            # 知道有 11 个红的却只能查到 1 个）。这里给每个失败块都留一条
+            # 「测试名 + 第一句错误」，够判断是否同源。
+            echo '=== 每个失败块的开头 ==='
+            grep -A3 'EXCEPTION CAUGHT' /tmp/test.log | head -120 || true
+            echo '=== 第一个失败完整堆栈 ==='
             awk '/EXCEPTION CAUGHT/{p=1} p' /tmp/test.log | head -60 || true
             echo '=== 末尾 40 行 ==='
             tail -40 /tmp/test.log
