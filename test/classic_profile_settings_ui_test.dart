@@ -153,7 +153,7 @@ void main() {
       // 自定义 dock（不再用 M3 NavigationBar 的 64×32 icon pill）：四个入口
       // 齐全，选中高亮落在“书架”。
       expect(find.byType(NavigationBar), findsNothing);
-      for (final label in ['首页', '短剧', '书架', '我的']) {
+      for (final label in ['首页', '动漫', '书架', '我的']) {
         expect(find.text(label), findsOneWidget);
       }
       final bar = tester.widget<SizedBox>(

@@ -566,7 +566,7 @@ void main() {
     );
     // 深色玻璃下选中文字用 accent。
     expect(
-      tester.widget<Text>(find.text('短剧')).style!.color,
+      tester.widget<Text>(find.text('动漫')).style!.color,
       HomePalette.accent,
     );
   });
@@ -583,7 +583,7 @@ void main() {
         onSelected: (index) => selected = index,
       );
 
-      const labels = ['首页', '短剧', '书架', '我的'];
+      const labels = ['首页', '动漫', '书架', '我的'];
       for (final label in labels) {
         // widget 级：入口的 Semantics 必须显式持有 onTap。
         final semantics = tester.widget<Semantics>(
