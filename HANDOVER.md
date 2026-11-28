@@ -459,6 +459,30 @@ unzip -l app-release.apk | grep -c "\.glsl"     # 应该是 9
 unzip -l app-release.apk | grep libfqapi_core   # 应该有 2 个（arm64 + armv7）
 
 # 7. 传到 apk 仓库的 Release
+#
+#    ⚠️ 这一步 CI 不做。build-apk.yml 的 Attach to release 只把 APK 挂到
+#    qingshu-base 自己的 release 上，而 README / badge 指向的是 qingshu-apk。
+#    不搬这一次，用户点「下载最新版」拿到的还是老包。
+#
+#    CI 产物在 qingshu-base 的 release 里，名字是 app-release.apk；
+#    搬到 apk 仓库时改名成 qingshu-merge-v<版本>.apk（沿用历史命名）。
+#
+#    用 API 搬（本机 git push 常被墙，但 api.github.com 稳）：
+#      # 1) 拿 base release 里资产的 id，再下载
+#      curl -sL -H "Authorization: Bearer $TOKEN" \
+#        -H "Accept: application/octet-stream" \
+#        "https://api.github.com/repos/lzjloveyjx/qingshu-base/releases/assets/<ASSET_ID>" \
+#        -o app-release.apk
+#      # 2) 在 apk 仓库建 release
+#      curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+#        -H "Content-Type: application/json" \
+#        -d '{"tag_name":"v2.6.1","name":"青枢 v2.6.1 · ...","body":"..."}' \
+#        https://api.github.com/repos/lzjloveyjx/qingshu-apk/releases
+#      # 3) 上传资产（upload_url 去掉 {?name,label} 后缀）
+#      curl -s -X POST -H "Authorization: Bearer $TOKEN" \
+#        -H "Content-Type: application/vnd.android.package-archive" \
+#        --data-binary @app-release.apk \
+#        "<UPLOAD_URL>?name=qingshu-merge-v2.6.1.apk"
 ```
 
 ### 已知的 APK 下载问题
@@ -528,7 +552,30 @@ flutter analyze --no-pub packages/kazumi/lib      → 4 error
 
 > 换人接手先看这一节：谁改了什么、为什么改、哪些是**刻意不动**的。
 
-### 2026-11-28 · 瘦身 + 修 CI
+### 2026-11-28 · v2.6.1 发版（瘦身 + 修 CI）
+
+**发版结果**
+
+| 项 | 值 |
+|---|---|
+| tag | `v2.6.1` |
+| APK | **64.2 MB**（上一版 109.3 MB，-45.2 MB） |
+| sha256 | `bed1e9703530cac30985391cc9e46ffe8f800bcd9f91b1bd85974c3719e50239` |
+| 内含 ABI | 仅 `arm64-v8a` |
+| 下载地址 | https://github.com/lzjloveyjx/qingshu-apk/releases/download/v2.6.1/qingshu-merge-v2.6.1.apk |
+
+**发版踩到的两个流程问题**
+
+1. **CI 只把 APK 挂到 `qingshu-base` 的 release，不会同步到 `qingshu-apk`。**
+   而 README 的下载链接和 badge 都指向 `qingshu-apk`。
+   打完 tag 后必须手动搬一次：下载 base 的 `app-release.apk`，
+   改名 `qingshu-merge-v<版本>.apk` 传到 apk 仓库的 release。
+   命令见本文件第九节末尾。
+
+2. **master push 和 tag push 是两个 run，别搞混。**
+   同一提交会触发两次 `Build APK`：一次 `event=push, branch=master`
+   （`Attach to release` 会 skipped），一次 `event=push, branch=v2.6.1`
+   （这一步才真正建 release）。等错 run 会以为发版失败了。
 
 **提交**
 
