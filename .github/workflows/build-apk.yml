@@ -84,7 +84,11 @@ jobs:
         run: |
           set -o pipefail
           set +e
-          flutter test --no-pub --concurrency=4 --reporter compact > /tmp/test.log 2>&1
+          # 并发从 4 降到 2：有一批用例要等真实 Hive I/O 和骨架动画
+          # （comprehensive_data_boundaries 的 7 个 theme preference 用例），
+          # 并发 4 在 4 vCPU runner 上会把 pumpAndSettle 拖到超时。
+          # android-apk.yml 的 dart-gate 早期也是 2。
+          flutter test --no-pub --concurrency=2 --reporter compact > /tmp/test.log 2>&1
           status=$?
           set -e
           if [ $status -ne 0 ]; then

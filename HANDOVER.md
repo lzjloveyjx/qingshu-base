@@ -575,6 +575,25 @@ flutter analyze --no-pub packages/kazumi/lib      → 4 error
 > 污染同进程里后续的用例。同类要小心的还有 `debugPrint`、`FlutterError.onError`、
 > `ErrorWidget.builder` —— 测试里碰过就必须在测试体内还原。
 
+**接着又挖出四批（全都不是本次改动引入的）**
+
+修完上面 6 个，全量测试剩下 18 个红，逐个查下来是四类历史欠账：
+
+| 批 | 现象 | 根因 |
+|---|---|---|
+| 1 | `Linux libraries provide all production FFI bindings` | `linux_key_store_layout_test.dart` 会真的 dlopen libsecret。`android-apk.yml` 一直装着 `libsecret-1-0`，`build-apk.yml` 原来没有测试步骤也就没装 |
+| 2 | `classic_secondary_settings*` 里的赞赏断言 | 和 `about_page_test` 同源：`about_page.dart` 早把「支持作者」卡（爱发电 + 微信赞赏）删了，断言还停在旧 UI |
+| 3 | 底部导航 `Bad state: No element` | 青枢把第 2 个 tab 改成「动漫」（`shell_dock.dart` 的 `_items`），两个测试还找「短剧」 |
+| 4 | 关于页介绍文案 | 正文改成「数据与播放全部在本地完成」，测试还在找「所有签名与解密都在你的手机本地完成」 |
+
+剩下一批 `pumpAndSettle timed out`（7 个 `theme preference` 用例 + 首页留白）
+是**并发导致**：这些用例要等真实 Hive I/O 和骨架动画，`--concurrency=4` 在
+4 vCPU runner 上会把 `pumpAndSettle` 拖到超时。已降到 2。
+
+> 教训：`flutter test` 的 `--concurrency` 不是越大越好。这批用例依赖真实文件 IO
+> 和定时动画，并发一高就互相抢资源，红的还是随机几个 —— 看起来像 flaky，
+> 实际是资源不够。`android-apk.yml` 的注释里也写着它早期被钉在 2。
+
 **评估过、暂时不做的**
 
 | 项 | 结论 |
