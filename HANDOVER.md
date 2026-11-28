@@ -1,7 +1,8 @@
 # 青枢 · 交接文档
 
 > 面向「换一台电脑继续干活」的场景。目标读者是拿到这台机器的人（或下一个会话的 AI）。
-> 最后更新：2026-11-28 · 当前版本 **v2.6.0**（versionCode 260）
+> 最后更新：2026-11-28（同日追加第十三次改动）· 当前版本 **v2.6.0**（versionCode 260）
+> 最新改动见文末「十三、改动记录」
 
 ---
 
@@ -272,6 +273,72 @@ APPDATA='D:\tmp\appdata' LOCALAPPDATA='D:\tmp\appdata' flutter analyze --no-pub 
 
 维护提示：**遇到 4xx 先怀疑限流，不是代码坏了。**判据是同一份代码换个时间/分支能不能过。
 
+### 6.10 APK 里躺着 28.7 MB 用不上的 x86 库
+
+v2.6.0 的包 114.5 MB，拆开看是这样（解 ZIP 中央目录算的，不用下整包）：
+
+| ABI | 体积 | 谁在用 |
+|---|---|---|
+| arm64-v8a | 54.4 MB | 真机唯一需要的 |
+| armeabi-v7a | 16.0 MB | 32 位老设备 / 部分电纸书 |
+| **x86_64** | **15.6 MB** | **安卓模拟器，手机装不了** |
+| **x86** | **13.1 MB** | **同上** |
+
+原因：`media_kit_libs_android_video` 是预编译 AAR，四个 ABI 的 `libmpv.so` 全带着。
+`flutter build apk --target-platform android-arm64` 只约束 Flutter 自己编的
+`libapp.so` / `libflutter.so`，**管不到 AAR 里的预置库**。
+
+修法在 `android/app/build.gradle.kts` 的 `packaging.jniLibs.excludes`：
+
+- 默认排掉 `lib/x86/**`、`lib/x86_64/**`、`lib/armeabi-v7a/**`
+- 传 `-PfqappKeepArmeabiV7a=true` 保留 32 位（`android-apk.yml` 就是这么传的）
+
+> **别改成 `ndk.abiFilters`。** 那会跟 `--split-per-abi` 的 AGP splits 冲突，
+> 报 "abiFilters cannot be present when splits are abi filters are set"，整个配置阶段就炸。
+
+> **PC 端不受影响。** Windows 版走 `windows/` 工程 + `media_kit_libs_windows_video`，
+> 出的 `.exe` 根本不经过 Android 的 `lib/` 目录。名字里都带 x86_64 的两样东西不是一回事。
+
+### 6.11 锁文件的镜像源会把整条 CI 拖红
+
+`pubspec.lock` 里每条依赖都记着 `url:`，那是**生成锁文件时**用的 pub 源。
+本地开发习惯设 `PUB_HOSTED_URL=https://pub.flutter-io.cn`，锁文件就被写成镜像地址；
+runner 走 pub.dev，两边一比对，报：
+
+```
+Would change 229 dependencies.
+Unable to satisfy `pubspec.yaml` using `pubspec.lock`.
+```
+
+然后 `--enforce-lockfile` 直接退出码 65。**这跟代码一行关系都没有**，
+但 `android-apk.yml` 的 dart-gate 和 `windows.yml` 都卡在这一步。
+
+现状：锁文件已归一化到 `https://pub.dev`，两份工作流在 `pub get` 前再 `sed` 一遍兜底。
+
+> 归一化的正则**只能替换 `https://pub.flutter-io.cn`**。
+> 别图省事写成 `url: "https://[^"]*"` 的通配 —— 锁文件里还有一条 git 依赖
+> （`Predidit/audio-service-mpris`），一起改掉 pub 就认为整个依赖树变了，照样报错。
+
+### 6.12 出包流水线原来没有测试门
+
+`build-apk.yml` 以前只做三件事：编 Rust、编 APK、上传。**一个测试都不跑。**
+
+唯一跑全量 `flutter test` 的是 `android-apk.yml` 的 dart-gate，而那条流水线
+历史上一直在失败（见 6.11），久而久之没人看了。后果很具体：
+`test/about_page_test.dart` 里断言「支持作者 / 前往爱发电 / 微信赞赏」——
+这几个 UI 在青枢里早就删了 —— 一直红着，包照样发出去。
+
+现在 `build-apk.yml` 加了 `test` job，`build` 加了 `needs: test`：
+
+- `flutter analyze --no-pub lib`（只查主壳）
+- `flutter test --no-pub --concurrency=4`
+
+> 不 analyze `packages/kazumi` 是有意的：`menu.dart` 继承上游 4 个历史 error
+> （引用不存在的 `pages/router.dart`），那是死代码，不该拦发布。
+
+> 写测试步骤时**别用管道接 `tail`**：退出码会被换成 `tail` 的，红了也显示绿。
+> 要接就先 `set -o pipefail`。
+
 ---
 
 ## 七、动漫模块当前状态
@@ -351,8 +418,9 @@ git add -A && git commit -m "..."
 git tag v2.6.1
 git push origin master v2.6.1
 
-# 4. 等 CI（约 15–20 分钟）
-#    失败就看 build/17_Build APK.txt 这一步的日志
+# 4. 等 CI（约 15–20 分钟，含前面的测试门）
+#    失败先看 test job：build 现在 needs: test，测试红了根本不会开始打包
+#    打包失败再看 build/17_Build APK.txt 这一步的日志
 
 # 5. 下载 APK（别用 GitHub 直连，会断）
 #    走 https://gh-proxy.org/<release asset url>，分 8MB 分段 Range 拉
@@ -380,6 +448,9 @@ GitHub 的 artifact/release 下载在部分网络下会：
 ---
 
 ## 十、代码健康度（交接时的快照）
+
+> 截至 2026-11-28，`build-apk.yml` 已加测试门：`flutter analyze --no-pub lib` +
+> `flutter test` 全绿才会开始打包。下面这 4 个 Kazumi error 不拦发布（是上游死代码）。
 
 ```
 flutter analyze --no-pub lib                      → 0 error
@@ -416,3 +487,49 @@ flutter analyze --no-pub packages/kazumi/lib      → 4 error
   `sed -E "s#x-access-token:[^@]*@#***@#g"`。
 - 本机的 keystore 备份在 `D:/小肥鱼工作区/06-系统/密钥/qingshu-signing/`，
   换机器一定要先确认这个文件还在。
+
+  > ⚠️ 这个路径是**旧机器（jeffl 账号）**的。WGL01 这台机器上没有这个目录，
+  > 本地出不了可覆盖安装的包，只能走 CI。真要本地打包，得先把 keystore 拷过来。
+
+---
+
+## 十三、改动记录（按时间倒序）
+
+> 换人接手先看这一节：谁改了什么、为什么改、哪些是**刻意不动**的。
+
+### 2026-11-28 · 瘦身 + 修 CI
+
+**提交**
+
+| 提交 | 内容 |
+|---|---|
+| `a5ff862` | `pubspec.yaml` 的 `description` 从「什锦铺 — 小说/短剧/漫剧/漫画/听书聚合客户端」改成「青枢 — 日轻小说与番剧聚合客户端」。只改描述，`name: fqapp` 不动（改 name 会牵动 android 包名和全部 `package:` 导入，属于重构） |
+| `082a04b` | 删 `assets/images/wechat_reward.png`（236 KB 微信收款码）+ pubspec 资源声明 + 对应测试用例。README 早清了收款码，文件却还打进 APK |
+| `1354061` | ABI 瘦身 + 锁文件归一化 + 出包加测试门（详见 6.10 / 6.11 / 6.12） |
+
+**APK 体积**：114.5 MB → **约 70 MB**（去掉 x86 / x86_64 / armeabi-v7a 三套原生库）。
+
+**显示名统一**：`什锦铺` → `青枢`，共 7 处——
+`main.dart` 的 MaterialApp title、`desktop_platform.dart` 窗口标题、
+`desktop_window_bar.dart` 两处、`home_masthead.dart` 的 `brand` 常量、
+`mine_page.dart` 标题与副标题、`sync_setup_page.dart` 一句文案。
+后三处改成引用 `HomeMasthead.brand`，以后改名只改一个地方。
+
+**刻意不动、并加了「不要改名」注释守住的两处**
+
+| 位置 | 值 | 改了会怎样 |
+|---|---|---|
+| `lib/services/sync/sync_folder_name.dart` | `'什锦铺-云同步'` | 云同步在网盘里建的目录名。改了 `sync_folder_picker.dart` 的「是否等于默认名」判断就失配，用户已有的同步目录找不到 |
+| `lib/services/linux_libsecret_key_store.dart` | `'什锦铺本机密钥'` | Linux keyring 条目名。改了读不到已存密钥，等于让用户重新输一遍口令 |
+
+要改这两个必须同时做数据迁移，不能只改字符串。
+
+**评估过、暂时不做的**
+
+| 项 | 结论 |
+|---|---|
+| 删漫画模块（`comic_reader_page.dart` + `comic/` + `widgets/comic/`，1565 行） | 它是**活的**：`detail_page.dart:2542` 有跳转、首页有「漫画」tab。删它对体积几乎没帮助（Dart 代码只是几十万行总量的一小部分），收益只是少一块维护面。要做就当独立任务，别混在瘦身里 |
+| 字体 | `assets/fonts` 里 NotoSerifSC Bold + Regular 共 5.1 MB。只用一种字重可省 2.6 MB，但影响阅读器排版观感，得先确认 |
+| `packages/kazumi/lib/pages/menu/menu.dart` 那 4 个历史 error | 引用不存在的 `pages/router.dart`，是 Kazumi 旧壳死代码。确认无引用后整个文件删掉即可 |
+
+
