@@ -678,7 +678,19 @@ jobs:
           sudo apt-get install -y --no-install-recommends libsecret-1-0
 
       - name: Analyze
-        run: flutter analyze --no-pub
+        # 同 build-apk.yml：只把 error 当失败。这条流水线历史上长期失败，
+        # 根源就在这里 —— 主壳有近百条历史 info/warning，flutter analyze
+        # 一律返回退出码 1，于是整个 android-apk 永远红，没人再看它。
+        shell: bash
+        run: |
+          set -o pipefail
+          output="$(flutter analyze --no-pub 2>&1 || true)"
+          echo "$output"
+          if printf '%s\n' "$output" | grep -q 'error •'; then
+            echo "::error::analyze 有 error"
+            exit 1
+          fi
+          echo "只有 warning / info，放行"
 
       # Size is review context, not a quality gate. Even a reporting error
       # must not block the build; analysis and functional checks stay enforced.

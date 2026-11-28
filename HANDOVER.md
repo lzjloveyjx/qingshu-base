@@ -339,6 +339,32 @@ Unable to satisfy `pubspec.yaml` using `pubspec.lock`.
 > 写测试步骤时**别用管道接 `tail`**：退出码会被换成 `tail` 的，红了也显示绿。
 > 要接就先 `set -o pipefail`。
 
+#### analyze 这道门要自己判 error
+
+**`--no-fatal-warnings` 不好使。** 这版 Flutter 的 `flutter analyze` 只要有
+**info** 级提示（`prefer_interpolation_to_compose_strings` 这种）也返回退出码 1。
+主壳有 99 条这类历史 issue，直接跑永远是红的。
+
+而且这正是 `android-apk.yml` 历史上长期失败的真凶之一 —— 它第 680 行就是
+裸的 `flutter analyze --no-pub`，近百条 info 一压，整条流水线永远红，
+于是「它一直失败」变成了共识，没人再去看了。
+
+现在两处都改成自己判：
+
+```bash
+set -o pipefail
+output="$(flutter analyze --no-pub lib 2>&1 || true)"
+echo "$output"
+if printf '%s\n' "$output" | grep -q 'error •'; then
+  echo "::error::主壳有 analyze error"
+  exit 1
+fi
+echo "只有 warning / info，放行"
+```
+
+> 维护提示：**「CI 一直红」不等于「CI 检查的东西不重要」。**
+> 这两条流水线的红色是配置写错造成的，不是代码有问题 —— 修完门才真正开始起作用。
+
 ---
 
 ## 七、动漫模块当前状态
