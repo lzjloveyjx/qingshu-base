@@ -555,6 +555,26 @@ flutter analyze --no-pub packages/kazumi/lib      → 4 error
 
 要改这两个必须同时做数据迁移，不能只改字符串。
 
+**测试门第一次跑，抓出 6 个真红用例**
+
+新加的 `test` job 第一次跑全量（4406 用例）就红了 6 个，集中在两个文件。
+都不是门本身的问题，是青枢改过行为、测试没跟上：
+
+| 文件 | 用例 | 根因 |
+|---|---|---|
+| `test/startup_gate_test.dart` | 5 个（失败页打不开 / 重试无效） | `_startBackend` 的 catch 被改成「只记日志、不设 `_backendError`」，本意是让移除番茄内容层后的默认启动不顶整屏失败页。但改过头了：**显式注入 `backendStarter` 的调用方**也在表达「这个后端是必须的」 |
+| `test/app_bootstrap_test.dart` | 1 个（`ErrorWidget.builder` 被改脏） | `app.main()` 会把 `ErrorWidget.builder` 换成青枢的占位组件；`flutter_test` 在测试体结束时会断言这个 foundation 调试变量没被动过，必须在**测试体内**还原（`addTearDown` 太晚） |
+
+修法（`07ab579`）：
+
+- 默认路径（不注入 `backendStarter`）失败仍然静默跳过，照常进本地阅读
+- **只有显式传了 `backendStarter`** 才进失败页，把原因 / 重试 / 服务面板 / 离线阅读入口给回来
+- `app_bootstrap_test` 存下 `ErrorWidget.builder` 原值，`finally` 里还原
+
+> 这个 `ErrorWidget.builder` 的坑值得记住：它是**全局变量**，一个用例改脏会连带
+> 污染同进程里后续的用例。同类要小心的还有 `debugPrint`、`FlutterError.onError`、
+> `ErrorWidget.builder` —— 测试里碰过就必须在测试体内还原。
+
 **评估过、暂时不做的**
 
 | 项 | 结论 |
