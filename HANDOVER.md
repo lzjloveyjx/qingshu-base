@@ -1,8 +1,8 @@
 # 青枢 · 交接文档
 
 > 面向「换一台电脑继续干活」的场景。目标读者是拿到这台机器的人（或下一个会话的 AI）。
-> 最后更新：2026-11-28（同日追加第十三次改动）· 当前版本 **v2.6.0**（versionCode 260）
-> 最新改动见文末「十三、改动记录」
+> 最后更新：2026-11-28 · 当前版本 **v2.6.2**（versionCode 262）
+> 最新改动与待办见文末「十三、改动记录」
 
 ---
 
@@ -216,6 +216,60 @@ Flutter 3.47 起 `package:flutter/material.dart` 拆成了独立包 `material_ui
 当前处理：
 - PiP → `pip_utils.dart` 里有通道可用性缓存，第一次失败后不再请求
 - 系统栏 → 优先走宿主通道 `fqapp/player_system_ui`
+
+### 6.5.0 超分「质量档点了没反应」—— 两个未修的已知问题
+
+**2026-11-28 实测反馈，尚未修复。** 下一轮接手请从这里开始。
+
+#### 问题一：在播放页点「质量档」，没弹窗、也没日志
+
+用户描述：在播放页的超分菜单里点质量档，**没有任何反应** ——
+既没弹出「性能提示」对话框，日志里也没有 `SuperResolution: mode=质量档 ...` 那一行。
+而在同一处点效率档，日志正常输出且有画面变化。
+
+代码路径（`player_item.dart` 的 `handleSuperResolutionChange`）：
+
+```dart
+final bool requiresPerformanceWarning = mode == SuperResolutionMode.quality;
+final bool warningDisabled = GStorage.getSetting(SettingsKeys.disableSuperResolutionWarning);
+if (requiresPerformanceWarning && !warningDisabled) {
+  ... 弹窗，confirmed = true 后才 setShader ...
+}
+if (confirmed && mounted) { playerController.setShader(mode); }
+else { playerController.setShader(mode); }   // warningDisabled 时走这条
+```
+
+两个分支都会调 `setShader`，而 `setShader` 一进函数就打日志。
+**没日志 = 压根没进 `setShader`**，所以嫌疑集中在：
+
+1. 菜单项没被点中（`KazumiMenuItem` 在弹出菜单里被裁掉/遮挡，点了空白）
+2. `handleSuperResolutionChange` 更前面的 `mediacodec_embed` 拦截提前 return 了
+   —— 但用户日志里 `vo=gpu`，不成立
+3. 某个异常被吞（`setShader` 的 catch 会打 `failed to set shader`，日志里没有）
+
+**下一步最省事的验证**：让用户点一次，然后看 `我的 → 运行日志` 里有没有
+`SuperResolution: mode=` 开头的行。有 → 是后续步骤挂了；没有 → 是 UI 层没触发。
+
+#### 问题二：在「设置 → 超分辨率」改档位，对正在播的视频不生效
+
+`packages/kazumi/lib/pages/settings/super_resolution_settings.dart` 的
+`onChanged` 只做两件事：
+
+```dart
+GStorage.putSetting<int>(SettingsKeys.defaultSuperResolutionMode, value.storageValue);
+setState(() { superResolutionMode = value; });
+```
+
+**只存盘、只刷新界面，不调 `setShader`。** 这个值要到下一次
+`createVideoController`（即下次起播）才会被读出来应用。
+所以在设置页改完、退回正在播的页面，什么都不会发生 —— 用户很容易以为开关坏了。
+
+**建议修法**（二选一，下一轮定）：
+
+- A. 设置页改档后，对当前活跃的播放器立即调一次 `setShader`
+- B. 至少给一句「将在下次播放时生效」的提示，别让人以为当场生效
+
+---
 
 ### 6.5 超分辨率的正确定时机
 
@@ -552,6 +606,21 @@ flutter analyze --no-pub packages/kazumi/lib      → 4 error
 
 > 换人接手先看这一节：谁改了什么、为什么改、哪些是**刻意不动**的。
 
+### 交接时的待办（2026-11-28 16:30）
+
+按优先级，**不用自己重新判断**：
+
+| # | 事项 | 在哪 |
+|---|---|---|
+| 1 | **等用户反馈 v2.6.2 播放是否流畅**。三种结果的处理见下方 v2.6.2 段落末尾的表格 | 本文档 §十三 |
+| 2 | 修**质量档点了没反应**（播放页） | 本文档 §6.5.0 问题一 |
+| 3 | 修**设置页改超分档位不生效**（只存盘不调 `setShader`） | 本文档 §6.5.0 问题二 |
+| 4 | 测试门还挂着 **10 个红用例**，现在是 `continue-on-error`。**修完必须把这一行删掉** | `build-apk.yml` 的 `test` job |
+| 5 | 决定 `qingshu-apk` 仓库要不要保留（`qingshu-base` 现在已 public，这层中转是历史遗留） | 本文档 §13「v2.6.1 发版」第 1 点 |
+
+**当前基线**：master `6dc3081`，最新 tag `v2.6.2`，APK 74.2 MB，仅 arm64。
+全量测试 4423 通过 / 10 失败。
+
 ### 2026-11-28 · v2.6.2 —— 播放卡顿的根因是 libmpv 二进制
 
 **现象**：同样的源、同样的网络，Kazumi 原版播放流畅，青枢卡顿且经常加载失败。
@@ -590,6 +659,28 @@ flutter analyze --no-pub packages/kazumi/lib      → 4 error
 **同版本还修了**：`build-apk.yml` 没设 `FQAPP_USE_MAVEN_MIRRORS: 'false'`，
 runner 在海外会优先走阿里云，撞 502 导致发版失败
 （`FastInfoset-1.2.16.pom ... status code 502`）。`android-apk.yml` 早就设了，这边漏了。
+
+**发版结果**
+
+| 项 | 值 |
+|---|---|
+| tag | `v2.6.2` |
+| APK | **74.2 MB**（v2.6.1 是 64.2 MB，libmpv 大了 10 MB） |
+| sha256 | `78f0c7a1823bd92ab6d50314600ab8ed8c692e0c69de0cb7a0539b6cc70191d9` |
+| 下载 | https://github.com/lzjloveyjx/qingshu-apk/releases/download/v2.6.2/qingshu-merge-v2.6.2.apk |
+
+**已验证**：包内 `lib/arm64-v8a/libmpv.so` 为 21.8 MB、sha256 `0a40f524…`，
+确认是 Predidit v1.3.1，与 Kazumi 原版一致。
+
+> ⚠️ **待用户真机验证（截至交接时未得到结果）**
+>
+> 换 libmpv 后播放是否真的流畅了，**还没有反馈**。三种可能对应完全不同的下一步：
+>
+> | 结果 | 下一步 |
+> |---|---|
+> | 流畅了 | libmpv 就是唯一变量，收工；回头修 6.5.0 的超分 bug |
+> | 还是卡 | libmpv 不是唯一原因，接着对比 `demuxer-max-bytes` / `demuxer-cache-dir` / 硬解配置（见 `playback_cache_policy.dart` 与 `player_playback_controller.dart` 的 300-460 行） |
+> | 更糟（崩溃/黑屏） | 立刻回退：把 `pubspec.yaml` 的 `media_kit_libs_android_video` 改回 `1.3.8` 并从 `third_party/` 删掉 fork 目录 |
 
 ---
 
