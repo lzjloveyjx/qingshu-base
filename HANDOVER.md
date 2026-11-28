@@ -271,6 +271,72 @@ setState(() { superResolutionMode = value; });
 
 ---
 
+### 6.5.1 与 Kazumi 原版的差异盘点（2026-11-28 实测）
+
+> **背景**：v2.6.2 换掉 libmpv 后，用户试了**一个**源，播放顺畅。
+> 但**换源会不会复现，还不确定** —— 别把「一个源通了」当成修好了。
+> 这一节是接手的人继续往下查的起点。
+
+**盘点方法**（可直接复现）：
+
+```bash
+cd /e/测试功能工作区/_tmp
+git clone --depth 1 https://gh-proxy.org/https://github.com/Predidit/Kazumi.git kazumi-orig
+# 然后逐文件 diff kazumi-orig/lib 与 qingshu-probe/packages/kazumi/lib
+```
+
+**规模**：原版 411 个 dart 文件，fork 421 个；两边都有 398 个，**其中 190 个内容不同**。
+
+#### 已经排除的（别再查了）
+
+| 项 | 结论 |
+|---|---|
+| mpv 属性设置 | 两边完全一致，青枢只多一个 `hwdec`（超分强制 copy-back 用） |
+| `demuxer-max-bytes` / `cache-secs` / `demuxer-cache-dir` | 一模一样，没有差异 |
+| 源解析 | 两边都用 `WebViewVideoSourceService`，同一条路 |
+| `VideoPage` | 只差一个 import（`material_ui` 替换 `flutter:material`），逻辑一致 |
+| libmpv 二进制 | v2.6.2 已换成 Kazumi 同款 Predidit v1.3.1 |
+
+#### 改动主要集中在这些地方
+
+按改动行数排序（fork 相对原版）：
+
+| 文件 | +/− | 性质 |
+|---|---|---|
+| `pages/player/controller/player_playback_controller.dart` | +272 −12 | **超分重写**（open 后挂着色器、hwdec 调整、诊断日志）。与播放卡顿可能有关 |
+| `services/download/download_manager.dart` | +63 −204 | 下载逻辑精简 |
+| `plugins/plugins.dart` / `plugins_controller.dart` | +198 / +91 | 规则源加载改动 |
+| `request/clients/plugin_site_client.dart` | +65 −3 | **GBK 解码**（wenku8 老站用），不影响视频 |
+| `pages/player/controller/player_danmaku_controller.dart` | +70 | **BiliBili 弹幕兜底**（DanDanPlay 需要 CI 注入的 AppId，青枢没有） |
+| `bean/card/network_img_layer.dart` | +17 −70 | 封面图加载精简 |
+| `pages/player/pip_utils.dart` | +61 −16 | PiP 降级（Kazumi 的原生通道没移植） |
+
+**青枢新增的 23 个文件**里，20 个是小说模块（`pages/novel/*`、`services/novel/*`），
+另外 3 个是 `kazumi_bootstrap.dart`、`bili_danmaku_source.dart`、`novel_cover_image.dart`。
+**这些都与视频播放无关。**
+
+**青枢删掉的 13 个**是 Kazumi 的 Modular 壳（`app_module.dart`、`main.dart`、
+`pages/router.dart`、`pages/menu/menu.dart`、各平台 webview impl），
+因为青枢主壳走 Riverpod，不用 Modular。
+
+#### 下一个该查什么（按可能性排序）
+
+1. **`player_playback_controller.dart` 那 +272 行**——这是唯一动到播放链路的实质性改动。
+   重点看 `setShader` 前后对 `hwdec` 的强制调整：
+   开超分时会 `setProperty('hwdec', '...-copy')` 并**重新 open 一次**，
+   这个重开对「换源后卡顿」可能有关（换源 = 换 URL = 重新解析 + 重新 open）。
+2. **`_waitForGlReady` 的等待时长**——如果它阻塞了起播流程，会表现为「进入播放页慢半拍」。
+3. **规则源解析超时**（`plugins.dart` / `plugin_site_client.dart` 那批改动）。
+   换源卡顿如果发生在**点开剧集到出画面**之间，那是解析阶段，不是播放阶段。
+   **先问用户：卡的是「等半天不出画面」还是「画面出来了但一直缓冲」？** 这两个方向完全不同。
+
+> **关键提问清单**（问用户能少走一半弯路）：
+> - 卡在**解析阶段**（转圈不出画面）还是**播放阶段**（出画面但卡顿/缓冲）？
+> - 是不是**特定源**才卡？同一个番换几个源有没有区别？
+> - `我的 → 运行日志` 里 `PlayerOpen: returned after ???ms` 那行的耗时是多少？
+>   （这行会在起播时打出来，直接暴露 open 阶段花了多久）
+
+---
 ### 6.5 超分辨率的正确定时机
 
 Anime4K 是 mpv 的 GLSL 用户着色器，有两个前提：
@@ -612,7 +678,7 @@ flutter analyze --no-pub packages/kazumi/lib      → 4 error
 
 | # | 事项 | 在哪 |
 |---|---|---|
-| 1 | **等用户反馈 v2.6.2 播放是否流畅**。三种结果的处理见下方 v2.6.2 段落末尾的表格 | 本文档 §十三 |
+| 1 | **继续验证 v2.6.2 播放**。用户已试**一个源**、顺畅，但**换源会不会复现不确定** —— 别当成修好了。查法见 §6.5.1 | 本文档 §6.5.1 + §十三 |
 | 2 | 修**质量档点了没反应**（播放页） | 本文档 §6.5.0 问题一 |
 | 3 | 修**设置页改超分档位不生效**（只存盘不调 `setShader`） | 本文档 §6.5.0 问题二 |
 | 4 | 测试门还挂着 **10 个红用例**，现在是 `continue-on-error`。**修完必须把这一行删掉** | `build-apk.yml` 的 `test` job |
@@ -678,8 +744,8 @@ runner 在海外会优先走阿里云，撞 502 导致发版失败
 >
 > | 结果 | 下一步 |
 > |---|---|
-> | 流畅了 | libmpv 就是唯一变量，收工；回头修 6.5.0 的超分 bug |
-> | 还是卡 | libmpv 不是唯一原因，接着对比 `demuxer-max-bytes` / `demuxer-cache-dir` / 硬解配置（见 `playback_cache_policy.dart` 与 `player_playback_controller.dart` 的 300-460 行） |
+> | 流畅了 | libmpv 是主要变量，但**仍需多源验证**（用户只试了 1 个源）；回头修 6.5.0 的超分 bug |
+> | 部分源卡 | libmpv 只是部分原因。**按 §6.5.1 的清单继续查** —— 那里已把 mpv 参数、源解析、VideoPage 都排除了，剩下 `player_playback_controller.dart` 那 +272 行超分改动和规则源解析超时 |
 > | 更糟（崩溃/黑屏） | 立刻回退：把 `pubspec.yaml` 的 `media_kit_libs_android_video` 改回 `1.3.8` 并从 `third_party/` 删掉 fork 目录 |
 
 ---
