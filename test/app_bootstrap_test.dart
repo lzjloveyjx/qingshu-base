@@ -195,6 +195,11 @@ void main() {
     });
     addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
     addTearDown(() => tester.pumpWidget(const SizedBox.shrink()));
+    // app.main() 会把 ErrorWidget.builder 换成青枢自己的占位组件（release 下
+    // 的灰块换成能显示异常类型）。flutter_test 会在测试体结束时断言这个
+    // foundation 调试变量未被改动 —— 和 debugPrint / FlutterError.onError 一样，
+    // 必须在**测试体内**还原，addTearDown 跑在不变量检查之后，太晚。
+    final originalErrorWidgetBuilder = ErrorWidget.builder;
     app.main();
     // main() 接管了 debugPrint 与 FlutterError.onError，把应用日志收进缓冲。
     // flutter_test 会在测试体结束时断言这两个 foundation 调试变量未被改动，
@@ -214,6 +219,7 @@ void main() {
       expect(tester.takeException(), isNull);
     } finally {
       await AppLog.instance.resetForTest();
+      ErrorWidget.builder = originalErrorWidgetBuilder;
     }
   });
 }

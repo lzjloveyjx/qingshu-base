@@ -950,8 +950,16 @@ class _RootShellState extends State<RootShell> with TickerProviderStateMixin {
       await (widget.backendStarter ?? BackendService.instance.start)();
       if (mounted) _scheduleLegacyUiNotice();
     } catch (e) {
-      // 不再 setState(_backendError)：那会触发整屏失败页。
-      debugPrint('[QingShu] 后端启动跳过（本项目不依赖番茄内容层）: $e');
+      // 【青枢】默认路径（不注入 backendStarter）失败只记日志、照常进本地阅读，
+      // 因为番茄内容层已经移除，它起不来不该顶一张整屏失败页。
+      //
+      // 但**显式注入 backendStarter 时仍然要走失败页**：那是调用方在声明
+      // 「这个后端是必须的」，失败页上的原因、重试、服务面板、离线阅读入口
+      // 都是给人留的退路，不能悄悄吞掉（startup_gate_test 守着这条）。
+      debugPrint('[QingShu] 后端启动失败: $e');
+      if (widget.backendStarter != null && mounted) {
+        setState(() => _backendError = e.toString());
+      }
     }
   }
 
