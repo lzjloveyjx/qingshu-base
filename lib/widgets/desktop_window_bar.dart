@@ -8,6 +8,7 @@ import '../services/desktop_platform.dart';
 import 'desktop_app_frame.dart' show desktopTab;
 import 'desktop_shell_scope.dart';
 import 'home/home_design.dart';
+import 'home/home_masthead.dart' show HomeMasthead;
 
 /// Custom Fluent / Windows 11 integrated title bar replacing the native OS caption
 /// bar when `TitleBarStyle.hidden` is active.
@@ -115,7 +116,7 @@ class _DesktopWindowBarState extends State<DesktopWindowBar> {
                       child: Padding(
                         padding: const EdgeInsets.only(right: 12),
                         child: Text(
-                          reader.title.trim().isNotEmpty ? reader.title : '什锦铺',
+                          reader.title.trim().isNotEmpty ? reader.title : '青枢',
                           key: const Key('desktop-reader-title'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -169,7 +170,7 @@ class _DesktopWindowBarState extends State<DesktopWindowBar> {
               ),
               const SizedBox(width: 8),
               Text(
-                '什锦铺',
+                HomeMasthead.brand,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

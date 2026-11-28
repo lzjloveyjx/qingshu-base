@@ -7,7 +7,7 @@
 // so the Windows right pane keeps its content instead of popping itself blank.
 //
 // 【青枢】与基底项目的差异（同一套两版式，内容只此一份）：
-//   • 应用名/简介/版本号换成青枢自己的（不再是什锦铺 1.0.205）
+//   • 应用名/简介/版本号换成青枢自己的（不再是上游什锦铺的 1.0.205）
 //   • GitHub 链接指向 lzjloveyjx/qingshu-base 与 qingshu-apk
 //   • 移除基底项目的「支持作者」卡（爱发电 + 微信赞赏）—— 青枢是自用项目，
 //     没有赞助入口，相关常量与弹窗一并删掉

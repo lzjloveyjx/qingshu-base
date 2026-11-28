@@ -441,7 +441,7 @@ void main() {
 
       await tester.tap(find.widgetWithText(SettingsRow, '关于'));
       await tester.pumpAndSettle();
-      expect(find.text('什锦铺'), findsOneWidget);
+      expect(find.text('青枢'), findsOneWidget);
       expect(find.byType(SettingsScaffold), findsOneWidget);
       expect(find.byTooltip('返回'), findsNothing);
 

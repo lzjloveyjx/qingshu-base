@@ -89,7 +89,7 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.byKey(const Key('home_search_button')), findsNothing);
       expect(find.byKey(const Key('home_category_button')), findsOneWidget);
-      expect(find.text('什锦铺'), findsOneWidget);
+      expect(find.text('青枢'), findsOneWidget);
       await tester.pumpWidget(const SizedBox.shrink());
     } finally {
       await tester.binding.setSurfaceSize(null);

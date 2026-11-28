@@ -17,7 +17,46 @@ env:
   FLUTTER_VERSION: '3.50.1'
 
 jobs:
+  # 【青枢】出包前的质量门。
+  #
+  # 之前 build-apk.yml 里没有任何测试步骤：它只编 Rust、编 APK、传包。
+  # 唯一跑全量 flutter test 的是 android-apk.yml 的 dart-gate，而那条
+  # 流水线历史上一直在失败，久而久之没人看了 —— 于是 about_page_test
+  # 断言「支持作者」这种早就删掉的 UI 也能一直红着，包照样发出去。
+  #
+  # 现在把门放回出包路径上：测试不过就不出包。
+  #
+  # 只 analyze 主壳 lib/ 是有意为之：packages/kazumi 里 menu.dart 继承了
+  # 上游 4 个历史 error（引用了不存在的 pages/router.dart），那是死代码，
+  # 不属于本次改动范围，不该拦发布。
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Analyze main shell
+        run: flutter analyze --no-pub lib
+
+      # 注意别用管道接 tail：退出码会被换成 tail 的，测试红了也显示绿。
+      - name: Run full widget test suite
+        shell: bash
+        run: |
+          set -o pipefail
+          flutter test --no-pub --concurrency=4 --reporter compact 2>&1 | tail -200
+
   build:
+    needs: test
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     steps:

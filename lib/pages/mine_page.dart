@@ -13,6 +13,7 @@ import '../services/library_store.dart';
 import '../services/media_history_store.dart';
 import '../widgets/desktop_shell_scope.dart';
 import '../widgets/home/home_design.dart';
+import '../widgets/home/home_masthead.dart' show HomeMasthead;
 import '../widgets/home/home_shelf.dart';
 import '../widgets/mine/classic_mine_entries.dart';
 import '../widgets/mine/classic_mine_heatmap.dart';
@@ -544,12 +545,12 @@ class _LocalIdentityPanel extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  '什锦铺',
+                  HomeMasthead.brand,
                   style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 7),
                 Text(
-                  '本地阅读档案 · 小说、短剧、漫画与听书',
+                  '本地阅读档案 · 日轻小说与番剧',
                   style: TextStyle(
                     fontSize: 12,
                     height: 1.6,

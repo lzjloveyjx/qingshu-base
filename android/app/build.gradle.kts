@@ -100,6 +100,32 @@ android {
         }
     }
 
+    // 【青枢】裁掉用不到的 ABI。
+    //
+    // media_kit_libs_android_video 是预编译 AAR，四个 ABI 的 libmpv.so 全带着；
+    // `--target-platform android-arm64` 只约束 Flutter 自己编的 libapp/libflutter，
+    // 管不到 AAR 里的预置库。所以历史 fat APK 里一直躺着 x86 和 x86_64 两套
+    // libmpv（合计约 28.7 MB），手机根本装不了这两种包，纯属白占体积。
+    //
+    // armeabi-v7a 默认也排掉（约 16 MB）：青枢只在 64 位真机上验证过。
+    // android-apk.yml 那条流水线仍然要出 32 位包给老设备/电纸书，它构建时
+    // 传 -PfqappKeepArmeabiV7a=true 就能把这一档放回来。
+    //
+    // 注意仍不能用 ndk.abiFilters —— 见上面 defaultConfig 里的说明，
+    // 加了会和 --split-per-abi 的 AGP splits 打架。packaging.excludes 只作用于
+    // 最终打包，不参与 ndk.abiFilters 的那条配置互斥检查。
+    packaging {
+        jniLibs {
+            val keepArmeabiV7a =
+                providers.gradleProperty("fqappKeepArmeabiV7a").orNull == "true"
+            excludes += if (keepArmeabiV7a) {
+                listOf("lib/x86/**", "lib/x86_64/**")
+            } else {
+                listOf("lib/x86/**", "lib/x86_64/**", "lib/armeabi-v7a/**")
+            }
+        }
+    }
+
     signingConfigs {
         getByName("debug") {
             // CI supplies an absolute path instead of relying on the runner's

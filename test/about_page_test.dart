@@ -108,7 +108,7 @@ void main() {
       () => Future<void>.delayed(const Duration(milliseconds: 600)),
     );
     await tester.pump();
-    expect(find.text('什锦铺'), findsWidgets);
+    expect(find.text('青枢'), findsWidgets);
   });
 
   testWidgets('墨水屏下 logo 不投彩色阴影，浅色仍保留', (tester) async {

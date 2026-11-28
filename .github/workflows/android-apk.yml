@@ -269,6 +269,21 @@ jobs:
           test/check_so_freshness_test.cjs
           test/make_test_media_test.cjs
 
+      - name: Normalize lockfile source
+        # 【青枢】pubspec.lock 里的 `url:` 记的是生成它时的 pub 源。本地开发
+        # 常用镜像（PUB_HOSTED_URL=pub.flutter-io.cn），锁文件就被写成镜像地址；
+        # runner 走 pub.dev，两边一比对就报「Would change 229 dependencies」，
+        # --enforce-lockfile 直接失败 —— 而失败原因跟代码毫无关系。
+        #
+        # 只归一化源地址，**版本与哈希一概不动**，所以锁的版本钳制依然有效。
+        run: |
+          set -euo pipefail
+          # 只替换镜像源地址。绝不能写成 url: "https://[^"]*" 的通配：
+          # 锁文件里还有一条 git 依赖（Predidit/audio-service-mpris），
+          # 一起改掉会让 pub 认为整个依赖树变了。
+          sed -i -E 's#url: "https://pub\.flutter-io\.cn"#url: "https://pub.dev"#g' pubspec.lock
+          grep -c 'url: "https://pub.dev"' pubspec.lock
+
       - name: Resolve Dart package dependencies
         run: flutter pub get --enforce-lockfile
 
@@ -411,7 +426,11 @@ jobs:
         # app-armeabi-v7a-release.apk) instead of a fat APK, so a 32-bit
         # device does not download the ARM64 native libraries and vice versa.
         # Keep pub enabled to regenerate the release plugin registrant after tests.
-        run: flutter build apk --release --target-platform android-arm,android-arm64 --split-per-abi
+        #
+        # 【青枢】主 build.gradle.kts 默认把 armeabi-v7a 也从 APK 里排掉
+        # （见 packaging.jniLibs.excludes）。这条流水线的职责就是给老设备出
+        # 32 位包，所以显式传 -PfqappKeepArmeabiV7a=true 把这一档放回来。
+        run: flutter build apk --release --target-platform android-arm,android-arm64 --split-per-abi -PfqappKeepArmeabiV7a=true
 
       - name: Test Android runtime boundaries
         working-directory: app/android
@@ -634,6 +653,21 @@ jobs:
           channel: stable
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
+
+      - name: Normalize lockfile source
+        # 【青枢】pubspec.lock 里的 `url:` 记的是生成它时的 pub 源。本地开发
+        # 常用镜像（PUB_HOSTED_URL=pub.flutter-io.cn），锁文件就被写成镜像地址；
+        # runner 走 pub.dev，两边一比对就报「Would change 229 dependencies」，
+        # --enforce-lockfile 直接失败 —— 而失败原因跟代码毫无关系。
+        #
+        # 只归一化源地址，**版本与哈希一概不动**，所以锁的版本钳制依然有效。
+        run: |
+          set -euo pipefail
+          # 只替换镜像源地址。绝不能写成 url: "https://[^"]*" 的通配：
+          # 锁文件里还有一条 git 依赖（Predidit/audio-service-mpris），
+          # 一起改掉会让 pub 认为整个依赖树变了。
+          sed -i -E 's#url: "https://pub\.flutter-io\.cn"#url: "https://pub.dev"#g' pubspec.lock
+          grep -c 'url: "https://pub.dev"' pubspec.lock
 
       - name: Resolve Dart package dependencies
         run: flutter pub get --enforce-lockfile

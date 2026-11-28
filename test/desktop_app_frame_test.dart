@@ -28,7 +28,7 @@ void main() {
     oledModeNotifier.value = false;
   });
 
-  testWidgets('frame title is 什锦铺; global search hides on the drama tab', (
+  testWidgets('frame title is 青枢; global search hides on the drama tab', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -36,7 +36,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('什锦铺'), findsOneWidget);
+    expect(find.text('青枢'), findsOneWidget);
     expect(find.text('番茄小铺'), findsNothing);
     expect(find.byKey(const Key('desktop-search')), findsOneWidget);
 
@@ -44,7 +44,7 @@ void main() {
     desktopTab.value = 1;
     await tester.pump();
     expect(find.byKey(const Key('desktop-search')), findsNothing);
-    expect(find.text('什锦铺'), findsOneWidget);
+    expect(find.text('青枢'), findsOneWidget);
 
     // 切回其它分区，全局搜索恢复。
     desktopTab.value = 0;

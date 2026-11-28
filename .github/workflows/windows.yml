@@ -51,7 +51,13 @@ jobs:
           channel: stable
           cache: true
       - name: Resolve dependencies on the official unmodified SDK
-        run: flutter pub get --enforce-lockfile
+        # 同 android-apk.yml：本地镜像生成的锁文件，源地址在 CI 上要归一化，
+        # 否则 --enforce-lockfile 会因为 URL 不同而判定整个依赖树要变。
+        run: |
+          set -euo pipefail
+          # 只替换镜像源地址（理由同 android-apk.yml：别碰 git 依赖那条 url）。
+          sed -i -E 's#url: "https://pub\.flutter-io\.cn"#url: "https://pub.dev"#g' pubspec.lock
+          flutter pub get --enforce-lockfile
       - name: Analyze application
         run: flutter analyze --no-pub
       # Informational source sizes are reported by the Android Dart job.

@@ -337,7 +337,7 @@ class _SyncSetupPageState extends State<SyncSetupPage> {
                     ),
                   ] else if (provider == 'weiyun') ...[
                     if (weiyunTokenEntry) ...[
-                      const Text('在微云官网申请 API Key，复制后回到什锦铺粘贴。'),
+                      const Text('在微云官网申请 API Key，复制后回到青枢粘贴。'),
                       const SizedBox(height: 12),
                       OutlinedButton(
                         onPressed: busy ? null : openWeiyunAuthorization,
