@@ -630,12 +630,13 @@ void main() {
         );
         expect(find.text(AboutPage.versionText), findsOneWidget);
         await tester.scrollUntilVisible(
-          find.text('微信赞赏'),
+          find.text('开源许可'),
           200,
           scrollable: find.byType(Scrollable).first,
         );
         expect(find.text('开源许可'), findsOneWidget);
-        expect(find.text('微信赞赏'), findsOneWidget);
+        // 【青枢】赞赏入口已移除（见 about_page.dart 顶部注释）。
+        expect(find.text('微信赞赏'), findsNothing);
         store.dispose();
         await tester.pumpWidget(const SizedBox.shrink());
       }
@@ -651,10 +652,11 @@ void main() {
     );
     expect(find.byType(SettingsGroupCard), findsOneWidget);
     expect(find.text(AboutPage.versionText), findsOneWidget);
-    expect(find.text('支持作者'), findsOneWidget);
+    // 【青枢】「支持作者」卡已移除，两种版式下都不该出现。
+    expect(find.text('支持作者'), findsNothing);
     store.value = AppThemeStyle.archive;
     await tester.pumpAndSettle();
-    expect(find.text('支持作者'), findsOneWidget);
+    expect(find.text('支持作者'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 }

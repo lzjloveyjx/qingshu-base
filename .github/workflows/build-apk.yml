@@ -42,6 +42,14 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Install Linux key-store runtime for FFI tests
+        # test/linux_key_store_layout_test.dart 会真的去 dlopen libsecret。
+        # 这条流水线原来没有测试，也就没装这个依赖；android-apk.yml 的
+        # dart-gate 里一直是装的，漏了它那条用例必红。
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libsecret-1-0
+
       - name: Install dependencies
         run: flutter pub get
 

@@ -273,23 +273,18 @@ void main() {
       expect(find.text(title), findsOneWidget);
     }
     expect(find.text(AboutPage.versionText), findsOneWidget);
-    // The fqapp-only sponsor card and 赞赏 stay on the classic page.
-    expect(find.text('支持作者'), findsOneWidget);
-    expect(find.text('前往爱发电'), findsOneWidget);
-    expect(find.text('微信赞赏'), findsOneWidget);
+    // 【青枢】base 的「支持作者」卡（爱发电 + 微信赞赏）已整体移除 ——
+    // 自用项目没有赞助入口，相关常量与弹窗一并删掉，见 about_page.dart 顶部注释。
+    // 这里断言它们不出现，防止哪天被上游合并带回来。
+    expect(find.text('支持作者'), findsNothing);
+    expect(find.text('前往爱发电'), findsNothing);
+    expect(find.text('微信赞赏'), findsNothing);
 
     await tester.tap(find.text('开源许可'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.byType(LicensePage), findsOneWidget);
     await tester.pageBack();
-    await tester.pumpAndSettle();
-
-    await tester.tap(find.text('微信赞赏'));
-    await tester.pumpAndSettle();
-    expect(find.byType(Dialog), findsOneWidget);
-    expect(find.text('微信扫一扫，赞赏作者'), findsOneWidget);
-    await tester.tap(find.text('关闭'));
     await tester.pumpAndSettle();
 
     store.value = AppThemeStyle.archive;
